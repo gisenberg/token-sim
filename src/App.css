@@ -381,6 +381,7 @@
 .ctx-bar.ctx-overflow { outline: 1px solid #f87171; outline-offset: 1px; }
 
 .ctx-seg { height: 100%; min-width: 1px; transition: width 0.15s; }
+.ctx-seg.ctx-system, .ctx-swatch.ctx-system { background: #475569; }
 .ctx-seg.ctx-prompt, .ctx-swatch.ctx-prompt { background: #64748b; }
 .ctx-seg.ctx-thinking, .ctx-swatch.ctx-thinking { background: #fbbf24; }
 .ctx-seg.ctx-output, .ctx-swatch.ctx-output { background: #34d399; }

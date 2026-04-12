@@ -232,6 +232,9 @@ const renderMarkdown = (text) => {
   return html
 }
 
+// System prompt + tool schemas overhead (estimated ~12K for a typical coding agent)
+const SYSTEM_TOKENS = 12000
+
 // ── Presets ──
 const PROMPT_PRESETS = [
   { label: 'Quick question', tokens: 500, desc: 'Short prompt, no context' },
@@ -324,7 +327,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       }, 100)
 
       const maxCtxTokens = parseInt(model.maxCtx) * 1000
-      const usedTokens = promptTokens + thinkingBudget + tokenCount
+      const usedTokens = SYSTEM_TOKENS + promptTokens + thinkingBudget + tokenCount
       const usageRatio = usedTokens / maxCtxTokens
       const needsCompact = usageRatio > 0.8
       const compactTokens = needsCompact ? Math.max(0, usedTokens - maxCtxTokens * 0.6) : 0
@@ -405,11 +408,12 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
 
   // Context window
   const maxCtxTokens = parseInt(model.maxCtx) * 1000
-  const usedTokens = promptTokens + thinkingBudget + tokenCount
+  const usedTokens = SYSTEM_TOKENS + promptTokens + thinkingBudget + tokenCount
   const overflows = usedTokens > maxCtxTokens
-  const promptPct = Math.min((promptTokens / maxCtxTokens) * 100, 100)
-  const thinkingPct = Math.min((thinkingBudget / maxCtxTokens) * 100, 100 - promptPct)
-  const outputPct = Math.min((tokenCount / maxCtxTokens) * 100, Math.max(0, 100 - promptPct - thinkingPct))
+  const systemPct = Math.min((SYSTEM_TOKENS / maxCtxTokens) * 100, 100)
+  const promptPct = Math.min((promptTokens / maxCtxTokens) * 100, 100 - systemPct)
+  const thinkingPct = Math.min((thinkingBudget / maxCtxTokens) * 100, Math.max(0, 100 - systemPct - promptPct))
+  const outputPct = Math.min((tokenCount / maxCtxTokens) * 100, Math.max(0, 100 - systemPct - promptPct - thinkingPct))
 
   // Markdown
   const markdownHtml = displayedTokens.length > 0 ? renderMarkdown(displayedTokens.join('')) : ''
@@ -448,12 +452,14 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
           <span className="ctx-bar-tick" />
           <span className="ctx-bar-tick-label">compact</span>
           <div className="ctx-bar-fill-area">
+            <div className="ctx-seg ctx-system" style={{ width: `${systemPct}%` }} />
             <div className="ctx-seg ctx-prompt" style={{ width: `${promptPct}%` }} />
             {thinkingBudget > 0 && <div className="ctx-seg ctx-thinking" style={{ width: `${thinkingPct}%` }} />}
             <div className="ctx-seg ctx-output" style={{ width: `${outputPct}%` }} />
           </div>
         </div>
         <div className="ctx-bar-legend">
+          <span className="ctx-legend-item"><span className="ctx-swatch ctx-system" />System</span>
           <span className="ctx-legend-item"><span className="ctx-swatch ctx-prompt" />Prompt</span>
           {thinkingBudget > 0 && <span className="ctx-legend-item"><span className="ctx-swatch ctx-thinking" />Thinking</span>}
           <span className="ctx-legend-item"><span className="ctx-swatch ctx-output" />Output</span>
