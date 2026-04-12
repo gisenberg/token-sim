@@ -710,14 +710,26 @@
   z-index: 10;
 }
 
-.cost-chart-title {
-  font-size: 0.65rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--text);
-  margin-bottom: 4px;
+.chart-tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 6px;
 }
+
+.chart-tab {
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.65rem;
+  font-family: var(--sans);
+  cursor: pointer;
+  transition: all 0.1s;
+}
+
+.chart-tab:hover { border-color: var(--border-light); color: var(--text-bright); }
+.chart-tab.active { background: var(--border); color: var(--text-heading); border-color: var(--border-light); }
 
 .cost-chart svg { display: block; }
 
@@ -727,27 +739,10 @@
   font-family: var(--mono);
 }
 
-.cost-chart-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 4px;
-  font-size: 0.6rem;
-  color: var(--text);
-}
-
-.cost-chart-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  white-space: nowrap;
-}
-
-.cost-chart-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 1px;
-  flex-shrink: 0;
+.chart-tooltip {
+  font-size: 10px;
+  font-family: var(--sans);
+  font-weight: 500;
 }
 
 /* ── About Page ── */

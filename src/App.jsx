@@ -461,6 +461,8 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
   const totalSimTimeRef = useRef(0)
   const totalWallTimeRef = useRef(0)
   const hiddenTokensRef = useRef(0) // thinking + tool decode tokens (not visible but billed)
+  const cumulativeInRef = useRef(0)
+  const cumulativeOutRef = useRef(0)
   const totalIndexRef = useRef(0)
   const contentRef = useRef(null)
   const rafRef = useRef(null)
@@ -507,7 +509,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       setElapsedTime(0); setPrefillElapsed(0); setCompactElapsed(0); setPrefillSize(0)
       setToolResultTokens(0); setCurrentToolIdx(-1); setToolLog([]); setOutputCount(0); setWallTime(0)
       setLoopCount(0); setCumulativeIn(0); setCumulativeOut(0); setCumulativeCost(0); setGeneration(0)
-      streamAccCtxRef.current = 0; cumulativeCostRef.current = 0; runCostRef.current = 0; totalSimTimeRef.current = 0; totalWallTimeRef.current = 0; hiddenTokensRef.current = 0
+      streamAccCtxRef.current = 0; cumulativeCostRef.current = 0; runCostRef.current = 0; totalSimTimeRef.current = 0; totalWallTimeRef.current = 0; hiddenTokensRef.current = 0; cumulativeInRef.current = 0; cumulativeOutRef.current = 0
       totalIndexRef.current = 0; hasStartedRef.current = false
       startTimeRef.current = null; decodeStartRef.current = null; toolResultsRef.current = 0
       return
@@ -526,17 +528,22 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
           setElapsedTime(simTime.toFixed(1))
           setWallTime((totalWallTimeRef.current + wallSec).toFixed(1))
           setOutputCount(totalIndexRef.current)
-          // Compute current run cost using billable output (thinking + tool decode + visible)
+          const runIn = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current + toolResultsRef.current
+          const runOut = hiddenTokensRef.current + totalIndexRef.current
+          // Compute cost for cloud models
           if (model.costIn != null) {
             const threshold = model.costInThreshold ?? Infinity
             const useHigh = (parseInt(model.maxCtx) * 1000) > threshold
             const inRate = useHigh && model.costInHigh ? model.costInHigh : model.costIn
             const outRate = useHigh && model.costOutHigh ? model.costOutHigh : model.costOut
-            const runIn = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current + toolResultsRef.current
-            runCostRef.current = (runIn / 1e6) * inRate + ((hiddenTokensRef.current + totalIndexRef.current) / 1e6) * outRate
-            if (onCostTick) {
-              onCostTick(streamIndex, totalSimTimeRef.current + simTime, cumulativeCostRef.current + runCostRef.current)
-            }
+            runCostRef.current = (runIn / 1e6) * inRate + (runOut / 1e6) * outRate
+          }
+          if (onCostTick) {
+            onCostTick(streamIndex, totalSimTimeRef.current + simTime, {
+              cost: cumulativeCostRef.current + runCostRef.current,
+              input: runIn + (cumulativeInRef.current ?? 0),
+              output: runOut + (cumulativeOutRef.current ?? 0),
+            })
           }
         }
       }, 200)
@@ -656,6 +663,8 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
                   const toolTok = toolSteps.reduce((s, t) => s + (t.resultTokens ?? 0) + (t.decodeTokens ?? 0) + (t.thinkTokens ?? 0), 0)
                   const inTok = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current + toolTok
                   const outTok = effectiveOutput + thinkingBudget + toolSteps.reduce((s, t) => s + (t.decodeTokens ?? 0) + (t.thinkTokens ?? 0), 0)
+                  cumulativeInRef.current += inTok
+                  cumulativeOutRef.current += outTok
                   setCumulativeIn(prev => prev + inTok)
                   setCumulativeOut(prev => prev + outTok)
                   setLoopCount(prev => prev + 1)
@@ -956,53 +965,71 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
   )
 }
 
-// ── Cost Chart ──
-const CostChart = ({ series, models }) => {
+// ── Metrics Chart ──
+const CHART_TABS = [
+  { id: 'cost', label: 'Cost', field: 'cost', fmt: (v) => `$${v < 1 ? v.toFixed(3) : v.toFixed(2)}`, zero: '$0' },
+  { id: 'input', label: 'Input', field: 'input', fmt: (v) => formatTokens(Math.round(v)), zero: '0' },
+  { id: 'output', label: 'Output', field: 'output', fmt: (v) => formatTokens(Math.round(v)), zero: '0' },
+]
+
+const MetricsChart = ({ series, models }) => {
+  const [tab, setTab] = useState('cost')
+  const [hovered, setHovered] = useState(null)
+
   if (!series || Object.keys(series).length === 0) return null
 
-  const W = 320, H = 140, PAD = { t: 10, r: 10, b: 24, l: 45 }
+  const ct = CHART_TABS.find(t => t.id === tab)
+  const W = 340, H = 150, PAD = { t: 10, r: 10, b: 24, l: 50 }
   const plotW = W - PAD.l - PAD.r, plotH = H - PAD.t - PAD.b
 
-  // Find max time and max cost across all series
-  let maxT = 0, maxC = 0
+  let maxT = 0, maxV = 0
   Object.values(series).forEach(pts => {
-    pts.forEach(p => { if (p.t > maxT) maxT = p.t; if (p.cost > maxC) maxC = p.cost })
+    pts.forEach(p => { if (p.t > maxT) maxT = p.t; const v = p[ct.field] ?? 0; if (v > maxV) maxV = v })
   })
-  if (maxT === 0 || maxC === 0) return null
+  if (maxT === 0 || maxV === 0) return null
 
   const scaleX = (t) => PAD.l + (t / maxT) * plotW
-  const scaleY = (c) => PAD.t + plotH - (c / maxC) * plotH
+  const scaleY = (v) => PAD.t + plotH - (v / maxV) * plotH
+
+  const entries = Object.entries(series).filter(([, pts]) => pts.length >= 2)
 
   return (
     <div className="cost-chart">
-      <div className="cost-chart-title">Cumulative cost</div>
+      <div className="chart-tabs">
+        {CHART_TABS.map(t => (
+          <button key={t.id} className={`chart-tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>{t.label}</button>
+        ))}
+      </div>
       <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
-        {/* Y axis labels */}
-        <text x={PAD.l - 4} y={PAD.t + 4} className="chart-label" textAnchor="end">${maxC.toFixed(2)}</text>
-        <text x={PAD.l - 4} y={PAD.t + plotH} className="chart-label" textAnchor="end">$0</text>
-        {/* X axis */}
+        <text x={PAD.l - 4} y={PAD.t + 4} className="chart-label" textAnchor="end">{ct.fmt(maxV)}</text>
+        <text x={PAD.l - 4} y={PAD.t + plotH} className="chart-label" textAnchor="end">{ct.zero}</text>
         <text x={PAD.l} y={H - 4} className="chart-label" textAnchor="start">0s</text>
         <text x={W - PAD.r} y={H - 4} className="chart-label" textAnchor="end">{maxT.toFixed(0)}s</text>
-        {/* Grid line */}
         <line x1={PAD.l} y1={PAD.t + plotH} x2={PAD.l + plotW} y2={PAD.t + plotH} stroke="var(--border)" strokeWidth="1" />
         <line x1={PAD.l} y1={PAD.t} x2={PAD.l} y2={PAD.t + plotH} stroke="var(--border)" strokeWidth="1" />
-        {/* Lines */}
-        {Object.entries(series).map(([key, pts]) => {
-          if (pts.length < 2) return null
+        {entries.map(([key, pts]) => {
           const model = models[key]
-          // Extend line flat to maxT so it doesn't retract when other models advance
-          const extended = pts[pts.length - 1].t < maxT ? [...pts, { t: maxT, cost: pts[pts.length - 1].cost }] : pts
-          const d = extended.map((p, i) => `${i === 0 ? 'M' : 'L'}${scaleX(p.t).toFixed(1)},${scaleY(p.cost).toFixed(1)}`).join(' ')
-          return <path key={key} d={d} fill="none" stroke={model?.color ?? '#888'} strokeWidth="1.5" opacity="0.8" />
+          const last = pts[pts.length - 1]
+          const extended = last.t < maxT ? [...pts, { ...last, t: maxT }] : pts
+          const d = extended.map((p, i) => `${i === 0 ? 'M' : 'L'}${scaleX(p.t).toFixed(1)},${scaleY(p[ct.field] ?? 0).toFixed(1)}`).join(' ')
+          const isHovered = hovered === key
+          return <g key={key}>
+            {/* Thick invisible hit area */}
+            <path d={d} fill="none" stroke="transparent" strokeWidth="12" onMouseEnter={() => setHovered(key)} onMouseLeave={() => setHovered(null)} style={{ cursor: 'pointer' }} />
+            <path d={d} fill="none" stroke={model?.color ?? '#888'} strokeWidth={isHovered ? 2.5 : 1.5} opacity={hovered && !isHovered ? 0.25 : 0.9} />
+          </g>
         })}
+        {/* Hover tooltip */}
+        {hovered && models[hovered] && (() => {
+          const pts = series[hovered]
+          const last = pts[pts.length - 1]
+          const x = scaleX(last.t), y = scaleY(last[ct.field] ?? 0)
+          return <g>
+            <circle cx={x} cy={y} r={3} fill={models[hovered].color} />
+            <text x={x + 6} y={y - 6} className="chart-tooltip" fill={models[hovered].color}>{models[hovered].name}: {ct.fmt(last[ct.field] ?? 0)}</text>
+          </g>
+        })()}
       </svg>
-      <div className="cost-chart-legend">
-        {Object.entries(series).map(([key]) => {
-          const model = models[key]
-          if (!model) return null
-          return <span key={key} className="cost-chart-item"><span className="cost-chart-dot" style={{ background: model.color }} />{model.name}</span>
-        })}
-      </div>
     </div>
   )
 }
@@ -1102,13 +1129,12 @@ function App() {
   const handleComplete = useCallback((index) => {
     setCompletedStreams(prev => { const next = new Set(prev); next.add(index); return next })
   }, [])
-  const handleCostTick = useCallback((idx, t, cost) => {
+  const handleCostTick = useCallback((idx, t, metrics) => {
     const key = idx.toString()
     if (!costSeriesRef.current[key]) costSeriesRef.current[key] = []
     const pts = costSeriesRef.current[key]
-    // Throttle: only add if time advanced by 0.5s+
     if (pts.length === 0 || t - pts[pts.length - 1].t >= 0.2) {
-      pts.push({ t, cost })
+      pts.push({ t, ...metrics })
       if (pts.length % 2 === 0) setCostSeries({ ...costSeriesRef.current })
     }
   }, [])
@@ -1123,7 +1149,7 @@ function App() {
   const hasCloudModels = selectedModels.some(m => m.costIn != null)
   const chartModelMap = useMemo(() => {
     const map = {}
-    selectedModels.forEach((m, i) => { if (m.costIn != null) map[i.toString()] = m })
+    selectedModels.forEach((m, i) => { map[i.toString()] = m })
     return map
   }, [selectedModels])
   const controlsDisabled = isRunning && !allComplete
@@ -1203,7 +1229,7 @@ function App() {
               </div>
             </div>
 
-            {hasCloudModels && isRunning && <CostChart series={costSeries} models={chartModelMap} />}
+            {isRunning && <MetricsChart series={costSeries} models={chartModelMap} />}
 
             {rows.map(({ start, models }) => (
               <div key={start} className="sim-row" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
