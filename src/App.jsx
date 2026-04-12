@@ -721,8 +721,13 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
             streamChunk(perStepOutput, () => {
               setPhase('tool-decode')
               const decodeMs = (step.decodeTokens / model.tokPerSec) * 1000 / ts
-              timeoutRef.current = setTimeout(() => {
-                hiddenTokensRef.current += step.decodeTokens
+              const decodeHiddenBefore = hiddenTokensRef.current
+              const decodeStart = Date.now()
+              const tickDecode = () => {
+                const el = Date.now() - decodeStart
+                hiddenTokensRef.current = decodeHiddenBefore + Math.min(Math.floor((el / decodeMs) * step.decodeTokens), step.decodeTokens)
+                if (el < decodeMs) { timeoutRef.current = setTimeout(tickDecode, 50); return }
+                hiddenTokensRef.current = decodeHiddenBefore + step.decodeTokens
                 setPhase('tool-exec')
                 const logEntries = step.parallel
                   ? step.parallel.map(l => ({ label: l, tokens: 0 }))
@@ -742,7 +747,8 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
                   setToolResultTokens(toolResultsRef.current)
                   runToolStep(i + 1)
                 }, step.execMs / ts)
-              }, decodeMs)
+              }
+              tickDecode()
             })
           })
         })
@@ -899,8 +905,6 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       <div className="stats-row">
         <div className="stat"><span className="stat-label">Output{model.outputMul > 1 ? ` (${model.outputMul}x)` : ''}</span><span className="stat-value">{outputCount.toLocaleString()} / {effectiveOutput.toLocaleString()}</span></div>
         <div className="stat"><span className="stat-label">Thinking</span><span className={`stat-value ${!model.thinking ? 'stat-dim' : ''}`}>{thinkingLabel}</span></div>
-        <div className="stat"><span className="stat-label">Sim time</span><span className="stat-value">{elapsedTime}s</span></div>
-        <div className="stat"><span className="stat-label">Wall</span><span className="stat-value">{wallTime}s</span></div>
         {rate && <div className="stat"><span className="stat-label">Actual</span><span className="stat-value">{rate} tok/s</span></div>}
         {loopCount > 0 && <div className="stat"><span className="stat-label">Total ({loopCount} runs)</span><span className="stat-value">{formatTokens(cumulativeIn)} in / {formatTokens(cumulativeOut)} out</span></div>}
       </div>
@@ -1103,10 +1107,9 @@ function App() {
     if (!costSeriesRef.current[key]) costSeriesRef.current[key] = []
     const pts = costSeriesRef.current[key]
     // Throttle: only add if time advanced by 0.5s+
-    if (pts.length === 0 || t - pts[pts.length - 1].t >= 0.5) {
+    if (pts.length === 0 || t - pts[pts.length - 1].t >= 0.2) {
       pts.push({ t, cost })
-      // Batch state updates every ~1s
-      if (pts.length % 5 === 0) setCostSeries({ ...costSeriesRef.current })
+      if (pts.length % 2 === 0) setCostSeries({ ...costSeriesRef.current })
     }
   }, [])
   const handleStart = () => {
