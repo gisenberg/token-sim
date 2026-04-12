@@ -988,24 +988,29 @@ function App() {
         return newCtx
       })
 
-      // Reset must render before restart — use separate frames
       const timer = setTimeout(() => {
         setIsRunning(false)
         setIsReset(true)
         setCompletedStreams(new Set())
-        // Wait for reset to render, then restart
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            setIsReset(false)
-            requestAnimationFrame(() => {
-              setIsRunning(true)
-            })
-          })
-        })
       }, 300)
       return () => clearTimeout(timer)
     }
   }, [allComplete, loopEnabled, isRunning, selectedModels, promptTokens, tokenCount, toolSteps, accumulatedContext])
+
+  // When reset is active and loop is enabled, clear reset and restart
+  const pendingLoopRef = useRef(false)
+  useEffect(() => {
+    if (isReset && loopEnabled && !isRunning) {
+      pendingLoopRef.current = true
+      const t = setTimeout(() => { setIsReset(false) }, 50)
+      return () => clearTimeout(t)
+    }
+    if (!isReset && !isRunning && pendingLoopRef.current) {
+      pendingLoopRef.current = false
+      setCompletedStreams(new Set())
+      setIsRunning(true)
+    }
+  }, [isReset, isRunning, loopEnabled])
 
   const cols = experiment.columns
   const rows = []
