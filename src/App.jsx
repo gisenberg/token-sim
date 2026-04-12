@@ -17,8 +17,8 @@ const MODELS = [
   // RTX 5090 — measured VRAM from experiments/**/all_results.json (turbo4 KV @ 32K)
   // gemma26b-q6: 25,636 MB measured. KV ~5.3 KB/tok (turbo4, 5 non-SWA layers, 2 KV heads)
   { id: '5090-gemma26b-q6', name: 'Gemma 4 26B-A4B', quant: 'Q6_K', hardware: 'RTX 5090', tier: 'S', tokPerSec: 139, prefillRate: 2900, weightGB: 25.6, kvPerTokKB: 5.3, maxCtx: '262K', quality: '17/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#f87171', hwColor: '#86efac' },
-  // gemma31b: 22,293 MB @ 32K, 28,000 MB @ 262K measured. Delta → ~24 KB/tok turbo4
-  { id: '5090-gemma31b', name: 'Gemma 4 31B-IT', quant: 'Q4_K_M', hardware: 'RTX 5090', tier: 'S', tokPerSec: 46, prefillRate: 1900, weightGB: 21.0, kvPerTokKB: 24, maxCtx: '262K', quality: '17/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#f87171', hwColor: '#86efac' },
+  // gemma31b: 28,025 MB @ 262K measured. KV breakdown: 2.7 GB non-SWA + 0.7 GB SWA = 3.4 GB total
+  { id: '5090-gemma31b', name: 'Gemma 4 31B-IT', quant: 'Q4_K_M', hardware: 'RTX 5090', tier: 'S', tokPerSec: 46, prefillRate: 1900, weightGB: 24.6, kvPerTokKB: 13, maxCtx: '262K', quality: '17/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#f87171', hwColor: '#86efac' },
   // qwen27b-opus: 19,565 MB measured. Dense 32L, ~50 KB/tok turbo4
   { id: '5090-qwen27b-opus', name: 'Qwen 3.5 27B Opus', quant: 'Q4_K_M', hardware: 'RTX 5090', tier: 'A', tokPerSec: 60, prefillRate: 1900, weightGB: 17.6, kvPerTokKB: 50, maxCtx: '262K', quality: '17/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#f87171', hwColor: '#86efac' },
   // gemma26b-q4: 20,046 MB measured. Same arch as q6, ~5.3 KB/tok turbo4
@@ -27,8 +27,8 @@ const MODELS = [
   { id: '5090-harmonic27b', name: 'Harmonic 27B', quant: 'Q4_K_M', hardware: 'RTX 5090', tier: 'A', tokPerSec: 61, prefillRate: 1800, weightGB: 18.0, kvPerTokKB: 50, maxCtx: '262K', quality: '31/31', thinking: true, thinkingBudget: 16384, outputMul: 1, color: '#f87171', hwColor: '#86efac' },
   // qwopus27b q6k: 24,549 MB measured. Qwen 27B arch, ~50 KB/tok turbo4
   { id: '5090-qwopus27b', name: 'Qwopus 3.5 27B-v3', quant: 'Q6_K', hardware: 'RTX 5090', tier: 'A', tokPerSec: 50, prefillRate: 1800, weightGB: 22.9, kvPerTokKB: 50, maxCtx: '196K', quality: '16/17', thinking: false, thinkingBudget: 0, outputMul: 2.5, color: '#f87171', hwColor: '#86efac' },
-  // gemma31b-opus: 23,199 MB measured. Same arch as gemma31b, ~24 KB/tok turbo4
-  { id: '5090-gemma31b-opus', name: 'Gemma 31B Opus-Dist.', quant: 'Q4_K_M', hardware: 'RTX 5090', tier: 'B', tokPerSec: 51, prefillRate: 2000, weightGB: 21.8, kvPerTokKB: 24, maxCtx: '262K', quality: '16/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#f87171', hwColor: '#86efac' },
+  // gemma31b-opus: 23,199 MB measured @ 32K. Same arch as gemma31b, ~13 KB/tok turbo4
+  { id: '5090-gemma31b-opus', name: 'Gemma 31B Opus-Dist.', quant: 'Q4_K_M', hardware: 'RTX 5090', tier: 'B', tokPerSec: 51, prefillRate: 2000, weightGB: 22.3, kvPerTokKB: 13, maxCtx: '262K', quality: '16/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#f87171', hwColor: '#86efac' },
   // qwen35b-a3b: 23,910 MB measured. DeltaNet hybrid, ~5 KB/tok turbo4
   { id: '5090-qwen35b-a3b', name: 'Qwen 3.5 35B-A3B', quant: 'Q4_K_M', hardware: 'RTX 5090', tier: 'C', tokPerSec: 174, prefillRate: 2400, weightGB: 23.2, kvPerTokKB: 5, maxCtx: '262K', quality: '11/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#f87171', hwColor: '#86efac' },
   // qwen27b-base q6k: 24,606 MB measured. Dense 32L, ~50 KB/tok turbo4
@@ -36,7 +36,7 @@ const MODELS = [
   // gemma-e4b: 12,108 MB measured (turbo4). Small model, ~10 KB/tok turbo4
   { id: '5090-gemma-e4b', name: 'Gemma 4 E4B', quant: 'Q8_0', hardware: 'RTX 5090', tier: 'F', tokPerSec: 131, prefillRate: 5000, weightGB: 11.5, kvPerTokKB: 10, maxCtx: '256K', quality: '5/22', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#f87171', hwColor: '#86efac' },
   // M4 Max — no measured VRAM in benchmarks, estimated from weight files + ~2 GB compute buffer
-  { id: 'm4-gemma31b', name: 'Gemma 4 31B-IT', quant: 'Q4_K_M', hardware: 'M4 Max', tier: 'S', tokPerSec: 15, prefillRate: 390, weightGB: 20.3, kvPerTokKB: 80, maxCtx: '64K', quality: '17/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#38bdf8', hwColor: '#93c5fd' },
+  { id: 'm4-gemma31b', name: 'Gemma 4 31B-IT', quant: 'Q4_K_M', hardware: 'M4 Max', tier: 'S', tokPerSec: 15, prefillRate: 390, weightGB: 20.3, kvPerTokKB: 47, maxCtx: '128K', quality: '17/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#38bdf8', hwColor: '#93c5fd' },
   { id: 'm4-gemma26b-q6', name: 'Gemma 4 26B-A4B', quant: 'Q6_K', hardware: 'M4 Max', tier: 'S', tokPerSec: 66, prefillRate: 980, weightGB: 24.6, kvPerTokKB: 20, maxCtx: '64K', quality: '15/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#38bdf8', hwColor: '#93c5fd' },
   { id: 'm4-qwen27b-mlx', name: 'Qwen 27B Opus MLX', quant: '4-bit', hardware: 'M4 Max', tier: 'A', tokPerSec: 19, prefillRate: 500, weightGB: 16.0, kvPerTokKB: 200, maxCtx: '64K', quality: '13/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#38bdf8', hwColor: '#93c5fd' },
   { id: 'm4-qwen27b-opus', name: 'Qwen 27B Opus', quant: 'Q4_K_M (planar3)', hardware: 'M4 Max', tier: 'A', tokPerSec: 16, prefillRate: 440, weightGB: 18.5, kvPerTokKB: 80, maxCtx: '128K', quality: '11/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#38bdf8', hwColor: '#93c5fd' },
@@ -53,7 +53,7 @@ const MODELS = [
   { id: 'spark-nemotron120b', name: 'Nemotron-3 Super 120B', quant: 'Q4_K_M', hardware: 'DGX Spark', tier: 'B', tokPerSec: 20, prefillRate: 500, weightGB: 89, kvPerTokKB: 24, maxCtx: '32K', quality: '11/17', thinking: true, thinkingBudget: 16384, outputMul: 1, color: '#a78bfa', hwColor: '#c4b5fd' },
   { id: 'spark-minimax', name: 'MiniMax-M2.5', quant: 'UD-Q3_K_XL', hardware: 'DGX Spark', tier: 'C', tokPerSec: 30, prefillRate: 400, weightGB: 98, kvPerTokKB: 20, maxCtx: '32K', quality: '5/15', thinking: true, thinkingBudget: 16384, outputMul: 1, color: '#a78bfa', hwColor: '#c4b5fd' },
   { id: 'spark-mistral119b', name: 'Mistral-Small-4 119B', quant: 'Q4_K_M', hardware: 'DGX Spark', tier: 'D', tokPerSec: 9, prefillRate: 350, weightGB: 71, kvPerTokKB: 24, maxCtx: '32K', quality: '7/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#a78bfa', hwColor: '#c4b5fd' },
-  { id: 'spark-gemma31b-dense', name: 'Gemma 4 31B-IT', quant: 'Q8_0 (dense)', hardware: 'DGX Spark', tier: 'F', tokPerSec: 7, prefillRate: 250, weightGB: 33, kvPerTokKB: 80, maxCtx: '262K', quality: 'N/A', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#a78bfa', hwColor: '#c4b5fd' },
+  { id: 'spark-gemma31b-dense', name: 'Gemma 4 31B-IT', quant: 'Q8_0 (dense)', hardware: 'DGX Spark', tier: 'F', tokPerSec: 7, prefillRate: 250, weightGB: 33, kvPerTokKB: 47, maxCtx: '262K', quality: 'N/A', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#a78bfa', hwColor: '#c4b5fd' },
 ]
 
 // ── Experiment Presets ──
