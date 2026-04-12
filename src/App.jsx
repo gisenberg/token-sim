@@ -980,8 +980,8 @@ const CHART_TABS = [
   { id: 'output', label: 'Output tok', field: 'output', fmt: (v) => formatTokens(Math.round(v)), zero: '0' },
 ]
 
-const MetricsChart = ({ series, models }) => {
-  const [tab, setTab] = useState('cost')
+const MetricsChart = ({ series, models, hasCloud }) => {
+  const [tab, setTab] = useState(hasCloud ? 'cost' : 'output')
   const [hovered, setHovered] = useState(null)
   const [mousePos, setMousePos] = useState(null)
   const svgRef = useRef(null)
@@ -1006,7 +1006,7 @@ const MetricsChart = ({ series, models }) => {
   return (
     <div className="cost-chart">
       <div className="chart-tabs">
-        {CHART_TABS.map(t => (
+        {CHART_TABS.filter(t => hasCloud || t.id !== 'cost').map(t => (
           <button key={t.id} className={`chart-tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>{t.label}</button>
         ))}
       </div>
@@ -1243,7 +1243,7 @@ function App() {
               </div>
             </div>
 
-            {isRunning && <MetricsChart series={costSeries} models={chartModelMap} />}
+            {isRunning && <MetricsChart series={costSeries} models={chartModelMap} hasCloud={hasCloudModels} />}
 
             {rows.map(({ start, models }) => (
               <div key={start} className="sim-row" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
