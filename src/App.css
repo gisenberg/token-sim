@@ -748,10 +748,11 @@
 .chart-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 4px 8px;
   margin-top: 6px;
   font-size: 0.6rem;
   color: var(--text);
+  max-width: 340px;
 }
 
 .chart-legend-item {

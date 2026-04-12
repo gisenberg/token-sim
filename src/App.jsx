@@ -971,6 +971,9 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
 }
 
 // ── Metrics Chart ──
+// Distinct colors for chart lines — avoids same-platform models blending together
+const CHART_COLORS = ['#f87171','#38bdf8','#34d399','#fbbf24','#a78bfa','#fb923c','#f472b6','#22d3ee','#a3e635','#e879f9']
+
 const formatDuration = (s) => {
   if (s < 60) return `${Math.round(s)}s`
   const m = Math.floor(s / 60), sec = Math.round(s % 60)
@@ -1033,7 +1036,7 @@ const MetricsChart = ({ series, models, hasCloud }) => {
           return <g key={key}>
             {/* Thick invisible hit area */}
             <path d={d} fill="none" stroke="transparent" strokeWidth="12" onMouseEnter={() => setHovered(key)} onMouseLeave={() => setHovered(null)} style={{ cursor: 'pointer' }} />
-            <path d={d} fill="none" stroke={model?.color ?? '#888'} strokeWidth={isHovered ? 2.5 : 1.5} opacity={hovered && !isHovered ? 0.25 : 0.9} />
+            <path d={d} fill="none" stroke={model?.chartColor ?? '#888'} strokeWidth={isHovered ? 2.5 : 1.5} opacity={hovered && !isHovered ? 0.25 : 0.9} />
           </g>
         })}
         {/* Hover tooltip near cursor */}
@@ -1045,7 +1048,7 @@ const MetricsChart = ({ series, models, hasCloud }) => {
           const ty = Math.max(mousePos.y - 8, 14)
           return <g>
             <rect x={tx - 4} y={ty - 12} width={120} height={16} rx={3} fill="var(--bg-card)" opacity="0.95" />
-            <text x={tx} y={ty} className="chart-tooltip" fill={models[hovered].color}>{models[hovered].name}: {ct.fmt(val)}</text>
+            <text x={tx} y={ty} className="chart-tooltip" fill={models[hovered].chartColor}>{models[hovered].name}: {ct.fmt(val)}</text>
           </g>
         })()}
       </svg>
@@ -1054,7 +1057,7 @@ const MetricsChart = ({ series, models, hasCloud }) => {
           const model = models[key]
           if (!model) return null
           return <span key={key} className={`chart-legend-item ${hovered === key ? 'chart-legend-active' : ''} ${hovered && hovered !== key ? 'chart-legend-dim' : ''}`} onMouseEnter={() => setHovered(key)} onMouseLeave={() => setHovered(null)}>
-            <span className="chart-legend-dot" style={{ background: model.color }} />{model.name}
+            <span className="chart-legend-dot" style={{ background: model.chartColor }} />{model.name}
           </span>
         })}
       </div>
@@ -1177,7 +1180,7 @@ function App() {
   const hasCloudModels = selectedModels.some(m => m.costIn != null)
   const chartModelMap = useMemo(() => {
     const map = {}
-    selectedModels.forEach((m, i) => { map[i.toString()] = m })
+    selectedModels.forEach((m, i) => { map[i.toString()] = { ...m, chartColor: CHART_COLORS[i % CHART_COLORS.length] } })
     return map
   }, [selectedModels])
   const controlsDisabled = isRunning && !allComplete
