@@ -967,7 +967,9 @@ const CostChart = ({ series, models }) => {
         {Object.entries(series).map(([key, pts]) => {
           if (pts.length < 2) return null
           const model = models[key]
-          const d = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${scaleX(p.t).toFixed(1)},${scaleY(p.cost).toFixed(1)}`).join(' ')
+          // Extend line flat to maxT so it doesn't retract when other models advance
+          const extended = pts[pts.length - 1].t < maxT ? [...pts, { t: maxT, cost: pts[pts.length - 1].cost }] : pts
+          const d = extended.map((p, i) => `${i === 0 ? 'M' : 'L'}${scaleX(p.t).toFixed(1)},${scaleY(p.cost).toFixed(1)}`).join(' ')
           return <path key={key} d={d} fill="none" stroke={model?.color ?? '#888'} strokeWidth="1.5" opacity="0.8" />
         })}
       </svg>
