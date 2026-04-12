@@ -629,16 +629,16 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         const totalInput = SYSTEM_TOKENS + promptTokens + toolResultTokens + toolSteps.reduce((s, t) => s + (t.resultTokens || 0), 0)
         const outputTokens = effectiveOutput + thinkingBudget
         const totalToolDecodeTokens = toolSteps.reduce((s, t) => s + (t.decodeTokens || 0) + (t.thinkTokens || 0), 0)
-        // Tiered input pricing (e.g. GPT-5.4: $2.50 under 272K, $5 above)
+        // Tiered pricing based on context window size, not input tokens
+        // (e.g. GPT-5.4: $2.50/$15 at 272K window, $5/$22.50 at 1M window)
         const threshold = model.costInThreshold || Infinity
-        const stdTokens = Math.min(totalInput, threshold)
-        const highTokens = Math.max(0, totalInput - threshold)
-        const useHighTier = totalInput > threshold
-        const costInput = (stdTokens / 1e6) * model.costIn + (highTokens / 1e6) * (model.costInHigh || model.costIn)
+        const maxCtxTokens = parseInt(model.maxCtx) * 1000
+        const useHighTier = maxCtxTokens > threshold
+        const inRate = useHighTier && model.costInHigh ? model.costInHigh : model.costIn
         const outRate = useHighTier && model.costOutHigh ? model.costOutHigh : model.costOut
+        const costInput = (totalInput / 1e6) * inRate
         const costOutput = ((outputTokens + totalToolDecodeTokens) / 1e6) * outRate
         const costTotal = costInput + costOutput
-        const inRate = useHighTier && model.costInHigh ? model.costInHigh : model.costIn
         const rateLabel = `$${inRate}/$${outRate} per 1M`
         return (
           <div className="cost-row">
