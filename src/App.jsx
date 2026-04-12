@@ -71,7 +71,7 @@ const MODELS = [
   { id: 'cloud-gpt41', name: 'GPT-4.1', quant: '1M context', hardware: 'OpenAI API', tier: 'A', tokPerSec: 100, prefillRate: 30000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'good', thinking: false, thinkingBudget: 0, outputMul: 1, costIn: 2, costOut: 8, color: '#4f46e5', hwColor: '#818cf8' },
   { id: 'cloud-o3mini', name: 'o3-mini (high)', quant: '200K context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 152, prefillRate: 30000, weightGB: 0, kvPerTokKB: 0, maxCtx: '200K', quality: 'frontier', thinking: true, thinkingBudget: 2000, outputMul: 1, costIn: 1.1, costOut: 4.4, color: '#4f46e5', hwColor: '#818cf8' },
   { id: 'cloud-gpt53-codex', name: 'GPT-5.3 Codex', quant: '400K context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 71, prefillRate: 20000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'frontier', thinking: true, thinkingBudget: 2000, outputMul: 1, costIn: 1.75, costOut: 7, color: '#4f46e5', hwColor: '#818cf8' },
-  { id: 'cloud-gpt54', name: 'GPT-5.4', quant: '1M context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 83, prefillRate: 25000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 1500, outputMul: 1, costIn: 2.5, costOut: 15, color: '#4f46e5', hwColor: '#818cf8' },
+  { id: 'cloud-gpt54', name: 'GPT-5.4', quant: '1M context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 83, prefillRate: 25000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 1500, outputMul: 1, costIn: 2.5, costOut: 15, costInHigh: 5, costInThreshold: 272000, color: '#4f46e5', hwColor: '#818cf8' },
   { id: 'cloud-gpt54-mini', name: 'GPT-5.4 mini', quant: '400K context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 168, prefillRate: 40000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'frontier', thinking: true, thinkingBudget: 800, outputMul: 1, costIn: 0.4, costOut: 1.6, color: '#4f46e5', hwColor: '#818cf8' },
   { id: 'cloud-gpt54-nano', name: 'GPT-5.4 nano', quant: '400K context', hardware: 'OpenAI API', tier: 'A', tokPerSec: 184, prefillRate: 50000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'good', thinking: true, thinkingBudget: 500, outputMul: 1, costIn: 0.2, costOut: 1.25, color: '#4f46e5', hwColor: '#818cf8' },
   { id: 'cloud-gpt51-codex-mini', name: 'GPT-5.1 Codex mini', quant: '400K context', hardware: 'OpenAI API', tier: 'A', tokPerSec: 185, prefillRate: 45000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'good', thinking: true, thinkingBudget: 800, outputMul: 1, costIn: 1.25, costOut: 10, color: '#4f46e5', hwColor: '#818cf8' },
@@ -626,17 +626,24 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       </div>
 
       {hwTotal === 0 && model.costIn != null && (() => {
-        const inputTokens = SYSTEM_TOKENS + promptTokens + toolResultTokens
+        const totalInput = SYSTEM_TOKENS + promptTokens + toolResultTokens + toolSteps.reduce((s, t) => s + (t.resultTokens || 0), 0)
         const outputTokens = effectiveOutput + thinkingBudget
         const totalToolDecodeTokens = toolSteps.reduce((s, t) => s + (t.decodeTokens || 0) + (t.thinkTokens || 0), 0)
-        const costInput = ((inputTokens + toolSteps.reduce((s, t) => s + (t.resultTokens || 0), 0)) / 1e6) * model.costIn
+        // Tiered input pricing (e.g. GPT-5.4: $2.50 under 272K, $5 above)
+        const threshold = model.costInThreshold || Infinity
+        const stdTokens = Math.min(totalInput, threshold)
+        const highTokens = Math.max(0, totalInput - threshold)
+        const costInput = (stdTokens / 1e6) * model.costIn + (highTokens / 1e6) * (model.costInHigh || model.costIn)
         const costOutput = ((outputTokens + totalToolDecodeTokens) / 1e6) * model.costOut
         const costTotal = costInput + costOutput
+        const rateLabel = model.costInHigh
+          ? (totalInput > threshold ? `$${model.costInHigh}` : `$${model.costIn}`) + `/$${model.costOut} per 1M`
+          : `$${model.costIn}/$${model.costOut} per 1M`
         return (
           <div className="cost-row">
             <div className="cost-total">${costTotal < 0.01 ? costTotal.toFixed(4) : costTotal.toFixed(2)}</div>
             <div className="cost-detail">
-              <span className="cost-item">${model.costIn}/{model.costOut} per 1M</span>
+              <span className="cost-item">{rateLabel}</span>
               <span className="cost-item cost-breakdown">in ${costInput.toFixed(3)} + out ${costOutput.toFixed(3)}</span>
             </div>
           </div>
