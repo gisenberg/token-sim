@@ -50,36 +50,118 @@ const HARDWARE_GROUPS = ['RTX 5090', 'M4 Max', 'DGX Spark'].map(hw => ({
     .map(m => m.id),
 }))
 
-const generateText = (tokenCount) => {
-  const words = [
-    'Artificial', 'intelligence', 'is', 'transforming', 'how', 'we', 'interact', 'with', 'technology',
-    'From', 'natural', 'language', 'processing', 'to', 'computer', 'vision', 'AI', 'systems',
-    'are', 'becoming', 'increasingly', 'sophisticated', 'Large', 'language', 'models', 'can',
-    'now', 'understand', 'context', 'generate', 'creative', 'content', 'and', 'assist',
-    'with', 'complex', 'problem-solving', 'tasks', 'The', 'rapid', 'advancement', 'in',
-    'this', 'field', 'continues', 'to', 'accelerate', 'new', 'breakthroughs', 'happening',
-    'regularly', 'machine', 'learning', 'neural', 'networks', 'deep', 'learning', 'algorithms',
-    'process', 'data', 'efficiently', 'pattern', 'recognition', 'prediction', 'automation',
-    'innovation', 'research', 'development', 'deployment', 'scalability', 'performance',
-    'optimization', 'accuracy', 'precision', 'recall', 'training', 'inference', 'models',
-    'parameters', 'weights', 'biases', 'gradients', 'backpropagation', 'forward', 'pass',
-    'activation', 'functions', 'layers', 'nodes', 'connections', 'architecture', 'design',
-    'implementation', 'testing', 'validation', 'evaluation', 'metrics', 'benchmarks',
-    'comparison', 'analysis', 'insights', 'discoveries', 'applications', 'use-cases',
-    'examples', 'demonstrations', 'tutorials', 'documentation', 'resources', 'tools',
-    'frameworks', 'libraries', 'platforms', 'infrastructure', 'cloud', 'edge', 'devices',
-    'mobile', 'web', 'desktop', 'embedded', 'IoT', 'robotics', 'autonomous', 'vehicles',
-    'healthcare', 'finance', 'education', 'entertainment', 'gaming', 'social', 'media',
-    'e-commerce', 'marketing', 'sales', 'customer', 'service', 'support', 'feedback',
-    'improvement', 'iteration', 'evolution', 'future', 'possibilities', 'potential',
-    'challenges', 'opportunities', 'trends', 'predictions', 'speculations', 'hypotheses'
-  ]
+// Pre-baked coding assistant response, tokenized to look realistic.
+// Repeats if output exceeds one pass. Each "token" is ~1 subword.
+const CODE_RESPONSE = `I'll fix the race condition in the connection pool and add proper cleanup.
 
+The issue is in \`src/db/pool.ts\` — the \`acquire()\` method doesn't check whether a connection was already returned before handing it out again. Here's the diff:
+
+\`\`\`diff
+--- a/src/db/pool.ts
++++ b/src/db/pool.ts
+@@ -23,8 +23,12 @@ export class ConnectionPool {
+   private connections: Connection[] = [];
+   private waiting: Array<(conn: Connection) => void> = [];
++  private inUse = new Set<string>();
+
+   async acquire(): Promise<Connection> {
+     const conn = this.connections.find(
+-      (c) => c.state === "idle"
++      (c) => c.state === "idle" && !this.inUse.has(c.id)
+     );
+     if (conn) {
++      this.inUse.add(conn.id);
+       conn.state = "active";
+       return conn;
+     }
+@@ -45,6 +49,7 @@ export class ConnectionPool {
+   release(conn: Connection): void {
+     conn.state = "idle";
++    this.inUse.delete(conn.id);
+     const next = this.waiting.shift();
+     if (next) {
+       next(conn);
+\`\`\`
+
+The root cause was that \`find()\` could return a connection that another async caller had already claimed but hadn't yet set to "active". The \`inUse\` set acts as a synchronous lock.
+
+I also need to update the shutdown method to wait for in-flight connections:
+
+\`\`\`typescript
+async shutdown(timeoutMs = 5000): Promise<void> {
+  // Stop accepting new requests
+  this.accepting = false;
+
+  // Wait for all active connections to be released
+  const deadline = Date.now() + timeoutMs;
+  while (this.inUse.size > 0 && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 50));
+  }
+
+  if (this.inUse.size > 0) {
+    console.warn(
+      \`Forcing shutdown with \${this.inUse.size} active connections\`
+    );
+  }
+
+  // Close all connections
+  await Promise.allSettled(
+    this.connections.map((c) => c.close())
+  );
+  this.connections = [];
+  this.inUse.clear();
+}
+\`\`\`
+
+And the test should verify concurrent access doesn't hand out the same connection:
+
+\`\`\`typescript
+test("concurrent acquire does not return same connection", async () => {
+  const pool = new ConnectionPool({ maxSize: 2 });
+
+  // Acquire two connections simultaneously
+  const [a, b] = await Promise.all([
+    pool.acquire(),
+    pool.acquire(),
+  ]);
+
+  expect(a.id).not.toBe(b.id);
+  expect(pool.activeCount).toBe(2);
+
+  pool.release(a);
+  pool.release(b);
+  expect(pool.activeCount).toBe(0);
+});
+
+test("shutdown waits for active connections", async () => {
+  const pool = new ConnectionPool({ maxSize: 3 });
+  const conn = await pool.acquire();
+
+  const shutdownPromise = pool.shutdown(1000);
+
+  // Release after a short delay
+  setTimeout(() => pool.release(conn), 100);
+
+  await shutdownPromise;
+  expect(pool.size).toBe(0);
+});
+\`\`\`
+
+The changes are backward-compatible — existing callers don't need to change. The \`inUse\` tracking adds negligible overhead since it's a Set lookup (O(1)).
+`.trim()
+
+const tokenizeResponse = (text) => {
+  // Split into tokens that approximate LLM subword tokenization
+  const raw = text.split(/(?<=\s)|(?=\s)|(?<=[\`\{\}\(\)\[\];:,.<>+\-=!&|])|(?=[\`\{\}\(\)\[\];:,.<>+\-=!&|])/)
+  return raw.filter(t => t.length > 0)
+}
+
+const RESPONSE_TOKENS = tokenizeResponse(CODE_RESPONSE)
+
+const generateText = (tokenCount) => {
   const tokens = []
   for (let i = 0; i < tokenCount; i++) {
-    const word = words[i % words.length]
-    const suffix = i === tokenCount - 1 ? '' : (Math.random() > 0.7 ? '  ' : ' ')
-    tokens.push(word + suffix)
+    tokens.push(RESPONSE_TOKENS[i % RESPONSE_TOKENS.length])
   }
   return tokens
 }
@@ -479,7 +561,7 @@ function App() {
           >
             {controlsDisabled ? 'Running...' : 'Start'}
           </button>
-          <button onClick={handleReset} className="btn-reset">Reset</button>
+          <button onClick={handleReset} className="btn-reset">Stop</button>
         </div>
 
         <div className="preset-group">
