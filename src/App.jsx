@@ -695,9 +695,66 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
   )
 }
 
+// ── About Page ──
+function AboutPage() {
+  return (
+    <div className="about-page">
+      <h2>About this simulator</h2>
+      <p>This tool visualizes what actually happens when you use an AI coding agent — the full pipeline from prompt processing to tool execution to token generation. It uses real benchmark data from <a href="https://github.com/gisenberg/local-model-eval" target="_blank" rel="noopener noreferrer">local-model-eval</a>, a systematic evaluation of local LLM inference across consumer and workstation hardware.</p>
+
+      <h3>What it simulates</h3>
+      <p>Each card runs through the real lifecycle of an inference request:</p>
+      <ul>
+        <li><strong>Context compaction</strong> — When conversation history exceeds 80% of the model's context window, older turns are summarized to make room. This adds latency before anything else can happen.</li>
+        <li><strong>Prefill</strong> — The model processes all input tokens (system prompt, conversation history, file contents). This is bandwidth-bound and scales linearly with prompt size. Subsequent tool calls use incremental prefill — only new tokens need processing because the KV cache persists.</li>
+        <li><strong>Thinking</strong> — Models with extended reasoning generate hidden chain-of-thought tokens before producing visible output. These are generated at the decode rate and consume context window space.</li>
+        <li><strong>Tool calls</strong> — Coding agents don't generate one response. They read files, grep code, edit, run tests — each requiring a new prefill + decode cycle. The simulator models parallel tool grouping, incremental KV cache reuse, and context growth as tool results accumulate.</li>
+        <li><strong>Decode</strong> — Visible output token generation, streamed at the model's measured throughput.</li>
+      </ul>
+
+      <h3>Hardware platforms</h3>
+      <ul>
+        <li><strong>RTX 5090</strong> (32 GB GDDR7, 1,792 GB/s) — Consumer GPU with the highest bandwidth. Best for MoE models where only a fraction of parameters are active per token.</li>
+        <li><strong>MacBook Pro M4 Max</strong> (36 GB unified, 410 GB/s, ~30 GB Metal ceiling) — Portable inference. Lower bandwidth but unified memory avoids CPU-GPU transfers. TurboQuant KV is slower on Metal due to dequant compute overhead.</li>
+        <li><strong>DGX Spark GB10</strong> (128 GB unified, 273 GB/s) — Massive memory lets you run 100B+ parameter models. Bandwidth-limited, not capacity-limited.</li>
+        <li><strong>Cloud APIs</strong> (Anthropic, Google, OpenAI) — No local memory constraints. Performance data from <a href="https://artificialanalysis.ai" target="_blank" rel="noopener noreferrer">Artificial Analysis</a>.</li>
+      </ul>
+
+      <h3>Where the data comes from</h3>
+      <p>Local model benchmarks use a standardized 3-task coding evaluation suite run at temperature 0 with zero code fixes — the model's output is extracted and tested as-is:</p>
+      <ul>
+        <li><strong>Expression Evaluator</strong> — Recursive descent parser with operator precedence (5 tests)</li>
+        <li><strong>A* Pathfinding</strong> — Graph algorithms with heap usage and edge cases (6 tests)</li>
+        <li><strong>LRU Cache with TTL</strong> — Doubly-linked list + hash map with time mocking (6 tests)</li>
+      </ul>
+      <p>VRAM measurements are captured from actual inference sessions. Throughput (tok/s) and TTFT are measured via streaming API calls. Prefill rates are derived from TTFT at known prompt sizes or from context-size deltas in long-context experiments.</p>
+      <p>KV cache costs per token are computed from model architecture (attention layer count, KV head count, head dimension) and verified against measured VRAM at multiple context sizes. Models using TurboQuant KV quantization show ~3.6-5.1x compression vs f16.</p>
+
+      <h3>Key findings</h3>
+      <ul>
+        <li><strong>Prefill dominates real-world latency</strong> — At 32K context on the Spark, prefill is 67% of total time. At 128K, it's 89%.</li>
+        <li><strong>Tool call loops compound the cost</strong> — A 6-step agent workflow means 6 prefill+decode cycles. Even with KV cache reuse, context grows with each step.</li>
+        <li><strong>MoE architectures win on throughput</strong> — Gemma 26B-A4B (4B active) runs at 139 tok/s vs Gemma 31B dense at 46 tok/s. Less bandwidth per token = faster decode.</li>
+        <li><strong>Architecture determines KV cost</strong> — Mamba hybrids (16 KB/tok) vs dense transformers (256 KB/tok) is a 16x difference in context memory cost.</li>
+        <li><strong>System prompts eat context</strong> — Coding agents consume ~12K tokens on system prompt + tool schemas before you type anything.</li>
+      </ul>
+
+      <p className="about-footer">Built with data from <a href="https://github.com/gisenberg/local-model-eval" target="_blank" rel="noopener noreferrer">gisenberg/local-model-eval</a>. Cloud model speeds from <a href="https://artificialanalysis.ai" target="_blank" rel="noopener noreferrer">Artificial Analysis</a>.</p>
+    </div>
+  )
+}
+
+// ── Hash Router ──
+const getHashRoute = () => {
+  const hash = window.location.hash.slice(1) // remove #
+  if (hash === 'about') return { page: 'about', experiment: null }
+  const exp = EXPERIMENTS.find(e => e.id === hash)
+  return { page: 'sim', experiment: exp ? hash : 'cloud-all' }
+}
+
 // ── App ──
 function App() {
-  const [activeExperiment, setActiveExperiment] = useState('cloud-all')
+  const [route, setRoute] = useState(getHashRoute)
   const [isRunning, setIsRunning] = useState(false)
   const [isReset, setIsReset] = useState(false)
   const [tokenCount, setTokenCount] = useState(4000)
@@ -705,6 +762,15 @@ function App() {
   const [toolPresetIdx, setToolPresetIdx] = useState(2)
   const [completedStreams, setCompletedStreams] = useState(new Set())
 
+  useEffect(() => {
+    const onHash = () => setRoute(getHashRoute())
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+
+  const navigate = (hash) => { window.location.hash = hash }
+
+  const activeExperiment = route.experiment || 'cloud-all'
   const experiment = EXPERIMENTS.find(e => e.id === activeExperiment)
   const selectedModels = experiment.models.map(id => MODELS.find(m => m.id === id))
   const maxThinkingBudget = Math.max(...selectedModels.map(m => m.thinkingBudget))
@@ -712,7 +778,11 @@ function App() {
   const maxTotalTokens = Math.round(tokenCount * maxOutputMul) + maxThinkingBudget
   const toolSteps = useMemo(() => flattenSteps(TOOL_PRESETS[toolPresetIdx].steps), [toolPresetIdx])
 
-  const handleExperimentChange = (id) => { setIsRunning(false); setIsReset(true); setCompletedStreams(new Set()); setActiveExperiment(id); setTimeout(() => setIsReset(false), 100) }
+  const handleExperimentChange = (id) => {
+    setIsRunning(false); setIsReset(true); setCompletedStreams(new Set())
+    navigate(id)
+    setTimeout(() => setIsReset(false), 100)
+  }
   const handleComplete = useCallback((index) => { setCompletedStreams(prev => { const next = new Set(prev); next.add(index); return next }) }, [])
   const handleStart = () => { setIsReset(false); setCompletedStreams(new Set()); setIsRunning(true) }
   const handleReset = () => { setIsRunning(false); setIsReset(true); setCompletedStreams(new Set()); setTimeout(() => setIsReset(false), 100) }
@@ -733,71 +803,80 @@ function App() {
           <div key={cat.id} className="nav-category">
             <div className="nav-cat-label">{cat.label}</div>
             {EXPERIMENTS.filter(e => e.category === cat.id).map(exp => (
-              <button key={exp.id} className={`nav-item ${activeExperiment === exp.id ? 'active' : ''}`} onClick={() => handleExperimentChange(exp.id)}>
+              <button key={exp.id} className={`nav-item ${activeExperiment === exp.id && route.page === 'sim' ? 'active' : ''}`} onClick={() => handleExperimentChange(exp.id)}>
                 <span className="nav-item-name">{exp.name}</span>
                 <span className="nav-item-count">{exp.models.length}</span>
               </button>
             ))}
           </div>
         ))}
+        <div className="nav-category">
+          <button className={`nav-item ${route.page === 'about' ? 'active' : ''}`} onClick={() => navigate('about')}>
+            <span className="nav-item-name">About</span>
+          </button>
+        </div>
       </nav>
 
       <main className="app-main">
-        <header className="app-header">
-          <div className="header-top">
-            <h1>Token Speed Simulator</h1>
-            <a className="repo-link" href="https://github.com/gisenberg/local-model-eval" target="_blank" rel="noopener noreferrer">local-model-eval</a>
-          </div>
-          <p>{experiment.desc}</p>
-        </header>
+        {route.page === 'about' ? <AboutPage /> : (
+          <>
+            <header className="app-header">
+              <div className="header-top">
+                <h1>Token Speed Simulator</h1>
+                <a className="repo-link" href="https://github.com/gisenberg/local-model-eval" target="_blank" rel="noopener noreferrer">local-model-eval</a>
+              </div>
+              <p>{experiment.desc}</p>
+            </header>
 
-        <div className="controls">
-          <div className="control-group">
-            <label>Output tokens<span>{tokenCount.toLocaleString()}</span></label>
-            <select value={tokenCount} onChange={(e) => setTokenCount(parseInt(e.target.value))} disabled={controlsDisabled} className="prompt-select">
-              {OUTPUT_PRESETS.map(p => <option key={p.tokens} value={p.tokens}>{p.label} — {p.tokens.toLocaleString()}</option>)}
-            </select>
-            <div className="prompt-desc">{OUTPUT_PRESETS.find(p => p.tokens === tokenCount)?.desc}</div>
-          </div>
-          <div className="control-group">
-            <label>Prompt context<span>{promptTokens.toLocaleString()}</span></label>
-            <select value={promptTokens} onChange={(e) => setPromptTokens(parseInt(e.target.value))} disabled={controlsDisabled} className="prompt-select">
-              {PROMPT_PRESETS.map(p => <option key={p.tokens} value={p.tokens}>{p.label} — {p.tokens.toLocaleString()}</option>)}
-            </select>
-            <div className="prompt-desc">{PROMPT_PRESETS.find(p => p.tokens === promptTokens)?.desc}</div>
-          </div>
-          <div className="control-group">
-            <label>Agent tool calls<span>{toolSteps.length}</span></label>
-            <select value={toolPresetIdx} onChange={(e) => setToolPresetIdx(parseInt(e.target.value))} disabled={controlsDisabled} className="prompt-select">
-              {TOOL_PRESETS.map((p, i) => <option key={i} value={i}>{p.label}</option>)}
-            </select>
-            <div className="prompt-desc">{TOOL_PRESETS[toolPresetIdx].desc}</div>
-          </div>
-        </div>
+            <div className="controls">
+              <div className="control-group">
+                <label>Output tokens<span>{tokenCount.toLocaleString()}</span></label>
+                <select value={tokenCount} onChange={(e) => setTokenCount(parseInt(e.target.value))} disabled={controlsDisabled} className="prompt-select">
+                  {OUTPUT_PRESETS.map(p => <option key={p.tokens} value={p.tokens}>{p.label} — {p.tokens.toLocaleString()}</option>)}
+                </select>
+                <div className="prompt-desc">{OUTPUT_PRESETS.find(p => p.tokens === tokenCount)?.desc}</div>
+              </div>
+              <div className="control-group">
+                <label>Prompt context<span>{promptTokens.toLocaleString()}</span></label>
+                <select value={promptTokens} onChange={(e) => setPromptTokens(parseInt(e.target.value))} disabled={controlsDisabled} className="prompt-select">
+                  {PROMPT_PRESETS.map(p => <option key={p.tokens} value={p.tokens}>{p.label} — {p.tokens.toLocaleString()}</option>)}
+                </select>
+                <div className="prompt-desc">{PROMPT_PRESETS.find(p => p.tokens === promptTokens)?.desc}</div>
+              </div>
+              <div className="control-group">
+                <label>Agent tool calls<span>{toolSteps.length}</span></label>
+                <select value={toolPresetIdx} onChange={(e) => setToolPresetIdx(parseInt(e.target.value))} disabled={controlsDisabled} className="prompt-select">
+                  {TOOL_PRESETS.map((p, i) => <option key={i} value={i}>{p.label}</option>)}
+                </select>
+                <div className="prompt-desc">{TOOL_PRESETS[toolPresetIdx].desc}</div>
+              </div>
+            </div>
 
-        <div className="action-bar">
-          <button onClick={handleStart} disabled={controlsDisabled} className="btn-start">{controlsDisabled ? 'Running...' : 'Start'}</button>
-          <button onClick={handleReset} className="btn-reset">Stop</button>
-        </div>
+            <div className="action-bar">
+              <button onClick={handleStart} disabled={controlsDisabled} className="btn-start">{controlsDisabled ? 'Running...' : 'Start'}</button>
+              <button onClick={handleReset} className="btn-reset">Stop</button>
+            </div>
 
-        {rows.map(({ start, models }) => (
-          <div key={start} className="sim-row" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
-            {models.map((model, i) => (
-              <TokenStream
-                key={model.id + '-' + (start + i)}
-                model={model}
-                tokens={tokens}
-                isRunning={isRunning}
-                isReset={isReset}
-                tokenCount={tokenCount}
-                promptTokens={promptTokens}
-                toolSteps={toolSteps}
-                onComplete={handleComplete}
-                streamIndex={start + i}
-              />
+            {rows.map(({ start, models }) => (
+              <div key={start} className="sim-row" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+                {models.map((model, i) => (
+                  <TokenStream
+                    key={model.id + '-' + (start + i)}
+                    model={model}
+                    tokens={tokens}
+                    isRunning={isRunning}
+                    isReset={isReset}
+                    tokenCount={tokenCount}
+                    promptTokens={promptTokens}
+                    toolSteps={toolSteps}
+                    onComplete={handleComplete}
+                    streamIndex={start + i}
+                  />
+                ))}
+              </div>
             ))}
-          </div>
-        ))}
+          </>
+        )}
       </main>
     </div>
   )

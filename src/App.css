@@ -585,6 +585,83 @@
 .tool-log-final { color: var(--text-bright); }
 .tool-log-final .tool-log-icon { color: var(--text-bright); }
 
+/* ── About Page ── */
+
+.about-page {
+  max-width: 720px;
+  padding: 36px 0;
+  line-height: 1.7;
+}
+
+.about-page h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--text-heading);
+  letter-spacing: -0.3px;
+  margin-bottom: 12px;
+}
+
+.about-page h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-heading);
+  margin-top: 28px;
+  margin-bottom: 8px;
+}
+
+.about-page p {
+  color: var(--text);
+  font-size: 0.88rem;
+  margin-bottom: 12px;
+}
+
+.about-page ul {
+  list-style: none;
+  padding: 0;
+  margin-bottom: 12px;
+}
+
+.about-page li {
+  color: var(--text);
+  font-size: 0.85rem;
+  padding: 4px 0 4px 16px;
+  position: relative;
+}
+
+.about-page li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 12px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--border-light);
+}
+
+.about-page strong {
+  color: var(--text-bright);
+  font-weight: 500;
+}
+
+.about-page a {
+  color: var(--text-bright);
+  text-decoration: none;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.about-page a:hover {
+  border-color: var(--text-bright);
+}
+
+.about-footer {
+  margin-top: 32px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+
 /* ── Stream Content ── */
 
 .stream-content {
