@@ -384,8 +384,6 @@ const TOOL_PRESETS = [
     { label: 'Run npm test', thinkTokens: 100, decodeTokens: 30, execMs: 3000, resultTokens: 1200 },
     { label: 'Edit src/db/pool.test.ts', thinkTokens: 400, decodeTokens: 90, execMs: 100, resultTokens: 300 },
   ], desc: 'Read, search, edit, test, fix' },
-  // Deep exploration uses subagents on cloud (parallel inference) or
-  // sequential tools on local (same work, no parallelism benefit)
   { label: 'Deep exploration (10)', steps: [
     { label: 'Glob src/**/*.ts', thinkTokens: 100, decodeTokens: 30, execMs: 100, resultTokens: 300 },
     [
@@ -402,24 +400,26 @@ const TOOL_PRESETS = [
     { label: 'Run npm test', thinkTokens: 100, decodeTokens: 30, execMs: 3000, resultTokens: 1200 },
     { label: 'Read test output', thinkTokens: 100, decodeTokens: 30, execMs: 100, resultTokens: 400 },
   ], desc: 'Full codebase exploration, multi-file edit, test' },
-  // Multi-file refactor with subagents — same task complexity as deep
-  // exploration but subagents parallelize the heavy lifting. On local
-  // hardware (single inference slot), subagents run sequentially.
-  { label: 'Refactor with subagents', steps: [
-    { label: 'Glob src/**/*.ts', thinkTokens: 100, decodeTokens: 30, execMs: 100, resultTokens: 300 },
-    [  // subagents explore codebase in parallel
-      { label: 'Subagent: map db layer', thinkTokens: 150, decodeTokens: 100, execMs: 20000, resultTokens: 3000 },
-      { label: 'Subagent: map API routes', thinkTokens: 150, decodeTokens: 100, execMs: 22000, resultTokens: 2800 },
-      { label: 'Subagent: map auth system', thinkTokens: 150, decodeTokens: 100, execMs: 18000, resultTokens: 2500 },
-    ],
-    [  // subagents implement changes in parallel
-      { label: 'Subagent: refactor db layer', thinkTokens: 300, decodeTokens: 150, execMs: 25000, resultTokens: 3500 },
-      { label: 'Subagent: update API routes', thinkTokens: 300, decodeTokens: 150, execMs: 28000, resultTokens: 3200 },
-      { label: 'Subagent: update auth', thinkTokens: 300, decodeTokens: 150, execMs: 20000, resultTokens: 2800 },
-    ],
-    { label: 'Run full test suite', thinkTokens: 100, decodeTokens: 30, execMs: 8000, resultTokens: 2500 },
-    { label: 'Fix test failures', thinkTokens: 500, decodeTokens: 100, execMs: 100, resultTokens: 200 },
-  ], desc: 'Two waves of 3 subagents: explore then implement' },
+]
+
+// Subagent presets — each wave spawns N parallel inference calls.
+// Each subagent has its own context (contextPerAgent) and generates
+// output (outputPerAgent) that flows back to the main agent.
+// On local hardware (single slot), subagents run sequentially.
+const SUBAGENT_PRESETS = [
+  { label: 'No subagents', waves: [], desc: 'Sequential tool calls only' },
+  { label: '3 agents (explore)', waves: [
+    { label: 'Explore codebase', count: 3, contextPerAgent: 8000, outputPerAgent: 2000, toolsPerAgent: 3 },
+  ], desc: '1 wave: 3 agents read + analyze in parallel' },
+  { label: '2×3 agents (explore + impl)', waves: [
+    { label: 'Explore codebase', count: 3, contextPerAgent: 8000, outputPerAgent: 2000, toolsPerAgent: 3 },
+    { label: 'Implement changes', count: 3, contextPerAgent: 12000, outputPerAgent: 3000, toolsPerAgent: 4 },
+  ], desc: '2 waves: explore then implement' },
+  { label: '3×3 agents (explore + impl + test)', waves: [
+    { label: 'Explore codebase', count: 3, contextPerAgent: 8000, outputPerAgent: 2000, toolsPerAgent: 3 },
+    { label: 'Implement changes', count: 3, contextPerAgent: 12000, outputPerAgent: 3000, toolsPerAgent: 4 },
+    { label: 'Verify + fix', count: 3, contextPerAgent: 10000, outputPerAgent: 2500, toolsPerAgent: 3 },
+  ], desc: '3 waves: explore, implement, verify' },
 ]
 
 // Flatten tool steps: parallel groups become a single step with combined stats
@@ -454,7 +454,7 @@ const formatTokens = (n) => {
 }
 
 // ── TokenStream Component ──
-const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptTokens, toolSteps, timeScale, loopEnabled, onLoopComplete, onCostTick, onComplete, streamIndex }) => {
+const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptTokens, toolSteps, subagentWaves, timeScale, loopEnabled, onLoopComplete, onCostTick, onComplete, streamIndex }) => {
   const [displayedTokens, setDisplayedTokens] = useState([])
   const [phase, setPhase] = useState('idle')
   const [thinkingTokensGenerated, setThinkingTokensGenerated] = useState(0)
@@ -467,6 +467,10 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
   const [toolLog, setToolLog] = useState([])
   const [outputCount, setOutputCount] = useState(0)
   const [wallTime, setWallTime] = useState(0)
+  const [activeSubagents, setActiveSubagents] = useState(0)
+  const [subagentWaveIdx, setSubagentWaveIdx] = useState(-1)
+  const [subagentTokensIn, setSubagentTokensIn] = useState(0)
+  const [subagentTokensOut, setSubagentTokensOut] = useState(0)
   const [loopCount, setLoopCount] = useState(0)
   const [cumulativeIn, setCumulativeIn] = useState(0)
   const [cumulativeOut, setCumulativeOut] = useState(0)
@@ -522,7 +526,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
     clearTimers()
     setDisplayedTokens([]); setPhase('idle'); setThinkingTokensGenerated(0)
     setElapsedTime(0); setPrefillElapsed(0); setCompactElapsed(0); setPrefillSize(0)
-    setToolResultTokens(0); setCurrentToolIdx(-1); setToolLog([]); setOutputCount(0); setWallTime(0)
+    setToolResultTokens(0); setCurrentToolIdx(-1); setToolLog([]); setOutputCount(0); setWallTime(0); setActiveSubagents(0); setSubagentWaveIdx(-1); setSubagentTokensIn(0); setSubagentTokensOut(0)
     totalIndexRef.current = 0; hasStartedRef.current = false
     startTimeRef.current = null; decodeStartRef.current = null; toolResultsRef.current = 0
     runCostRef.current = 0; hiddenTokensRef.current = 0; runSimTimeRef.current = 0; lastTickRef.current = 0
@@ -534,7 +538,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       if (loopTimeoutRef.current) clearTimeout(loopTimeoutRef.current)
       setDisplayedTokens([]); setPhase('idle'); setThinkingTokensGenerated(0)
       setElapsedTime(0); setPrefillElapsed(0); setCompactElapsed(0); setPrefillSize(0)
-      setToolResultTokens(0); setCurrentToolIdx(-1); setToolLog([]); setOutputCount(0); setWallTime(0)
+      setToolResultTokens(0); setCurrentToolIdx(-1); setToolLog([]); setOutputCount(0); setWallTime(0); setActiveSubagents(0); setSubagentWaveIdx(-1); setSubagentTokensIn(0); setSubagentTokensOut(0)
       setLoopCount(0); setCumulativeIn(0); setCumulativeOut(0); setCumulativeCost(0); setGeneration(0)
       streamAccCtxRef.current = 0; cumulativeCostRef.current = 0; runCostRef.current = 0; totalSimTimeRef.current = 0; totalWallTimeRef.current = 0; hiddenTokensRef.current = 0; cumulativeInRef.current = 0; cumulativeOutRef.current = 0; runSimTimeRef.current = 0; lastTickRef.current = 0
       totalIndexRef.current = 0; hasStartedRef.current = false
@@ -676,10 +680,63 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       // Track tokens added in previous step for incremental prefill
       let lastStepTokens = 0
 
+      // Run subagent waves sequentially, then call next()
+      const waves = subagentWaves ?? []
+      const runSubagentWave = (waveIdx, next) => {
+        if (waveIdx >= waves.length) { setActiveSubagents(0); setSubagentWaveIdx(-1); next(); return }
+        const wave = waves[waveIdx]
+        setSubagentWaveIdx(waveIdx)
+        setActiveSubagents(wave.count)
+        setPhase('subagents')
+
+        // Each subagent: prefill its context + run its tools + generate output
+        // Cost: count × (contextPerAgent input + outputPerAgent output)
+        // Wall time: subagent inference time (context/prefillRate + tools + output/tokPerSec)
+        const agentPrefillMs = (wave.contextPerAgent / model.prefillRate) * 1000
+        const agentToolMs = (wave.toolsPerAgent ?? 3) * 500 // ~500ms per tool avg
+        const agentDecodeMs = (wave.outputPerAgent / model.tokPerSec) * 1000
+        const waveMs = (agentPrefillMs + agentToolMs + agentDecodeMs) / getTs()
+
+        // Track subagent tokens
+        const waveInputTotal = wave.count * wave.contextPerAgent
+        const waveOutputTotal = wave.count * wave.outputPerAgent
+        setSubagentTokensIn(prev => prev + waveInputTotal)
+        setSubagentTokensOut(prev => prev + waveOutputTotal)
+
+        // Add subagent costs to hidden tokens (they're billed output)
+        hiddenTokensRef.current += waveOutputTotal
+
+        // Subagent results flow back as context for main agent
+        toolResultsRef.current += waveOutputTotal
+        setToolResultTokens(toolResultsRef.current)
+
+        // Add to tool log
+        setToolLog(prev => [...prev, { label: `${wave.label} (${wave.count} subagents)`, tokens: waveOutputTotal, subagent: true }])
+
+        // Animate the wave duration
+        const waveStart = Date.now()
+        const tickWave = () => {
+          const elapsed = Date.now() - waveStart
+          // Count down active subagents as they "complete"
+          const completed = Math.min(Math.floor((elapsed / waveMs) * wave.count), wave.count)
+          setActiveSubagents(wave.count - completed)
+          if (elapsed < waveMs) {
+            timeoutRef.current = setTimeout(tickWave, 100)
+          } else {
+            setActiveSubagents(0)
+            runSubagentWave(waveIdx + 1, next)
+          }
+        }
+        tickWave()
+      }
+
       // Run tool step i, then continue
       const runToolStep = (i) => {
         if (i >= numSteps) {
-          // All tool calls done — final prefill + thinking + remaining output
+          // All tool calls done — run subagent waves, then final output
+          const afterSubagents = () => {
+            lastStepTokens = waves.length > 0 ? waves.reduce((s, w) => s + w.count * w.outputPerAgent, 0) : lastStepTokens
+          }
           const doFinal = () => {
             if (!decodeStartRef.current) decodeStartRef.current = Date.now()
             const thinkAmount = numSteps === 0 ? thinkingBudget : finalThinking
@@ -738,8 +795,14 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
               })
             })
           }
-          if (lastStepTokens > 0) startPrefill(lastStepTokens, doFinal)
-          else doFinal()
+          // Tool calls → subagent waves → prefill subagent results → final output
+          const startFinal = () => {
+            afterSubagents()
+            if (lastStepTokens > 0) startPrefill(lastStepTokens, doFinal)
+            else doFinal()
+          }
+          if (waves.length > 0) runSubagentWave(0, startFinal)
+          else startFinal()
           return
         }
 
@@ -826,7 +889,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
   const decodeElapsed = decodeStartRef.current ? (Date.now() - decodeStartRef.current) * (timeScale || 1) / 1000 : 0
   const rate = displayedTokens.length > 0 && decodeElapsed > 0 ? (displayedTokens.length / decodeElapsed).toFixed(1) : null
 
-  const phaseLabels = { idle: 'Ready', compacting: 'Compacting', prefill: 'Prefill', 'tool-decode': 'Tool Call', 'tool-exec': 'Executing', thinking: 'Thinking', streaming: 'Streaming', complete: 'Done' }
+  const phaseLabels = { idle: 'Ready', compacting: 'Compacting', prefill: 'Prefill', 'tool-decode': 'Tool Call', 'tool-exec': 'Executing', subagents: 'Subagents', thinking: 'Thinking', streaming: 'Streaming', complete: 'Done' }
   const statusLabel = phaseLabels[phase]
   const isActive = phase !== 'idle' && phase !== 'complete'
   const cardClass = ['stream-card', isActive && 'is-running', phase === 'complete' && 'is-complete'].filter(Boolean).join(' ')
@@ -970,6 +1033,16 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         <div className="thinking-banner"><span className="thinking-spinner" /><div className="thinking-detail"><span>Thinking</span><span className="thinking-count">{thinkingTokensGenerated.toLocaleString()} tokens</span></div></div>
       )}
 
+      {phase === 'subagents' && activeSubagents > 0 && (
+        <div className="subagent-banner">
+          <div className="subagent-dots">{Array.from({ length: activeSubagents }, (_, i) => <span key={i} className="subagent-dot" />)}</div>
+          <div className="subagent-detail">
+            <span>{waves[subagentWaveIdx]?.label}</span>
+            <span className="subagent-count">{activeSubagents} subagent{activeSubagents !== 1 ? 's' : ''} running</span>
+          </div>
+        </div>
+      )}
+
       <div ref={contentRef} className="stream-content">
         {displayedTokens.length === 0 && toolLog.length === 0 && phase === 'idle' && <div className="stream-empty">Waiting to start</div>}
         {displayedTokens.length === 0 && toolLog.length === 0 && (phase === 'prefill' || phase === 'compacting') && <div className="stream-empty">Processing...</div>}
@@ -977,8 +1050,8 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         {toolLog.length > 0 && (
           <div className="tool-log">
             {toolLog.map((entry, i) => (
-              <div key={i} className={`tool-log-entry ${entry.parallel ? 'tool-log-parallel' : ''}`}>
-                <span className="tool-log-icon">{entry.parallel ? '├' : '→'}</span>
+              <div key={i} className={`tool-log-entry ${entry.parallel ? 'tool-log-parallel' : ''} ${entry.subagent ? 'tool-log-subagent' : ''}`}>
+                <span className="tool-log-icon">{entry.subagent ? '⊕' : entry.parallel ? '├' : '→'}</span>
                 <span className="tool-log-label">{entry.label}</span>
                 <span className="tool-log-tokens">+{entry.tokens.toLocaleString()} tok</span>
               </div>
@@ -1157,6 +1230,7 @@ function App() {
   const [tokenCount, setTokenCount] = useState(4000)
   const [promptTokens, setPromptTokens] = useState(25000)
   const [toolPresetIdx, setToolPresetIdx] = useState(2)
+  const [subagentPresetIdx, setSubagentPresetIdx] = useState(0)
   const [timeScale, setTimeScale] = useState(1)
   const [loopEnabled, setLoopEnabled] = useState(false)
   const [completedStreams, setCompletedStreams] = useState(new Set())
@@ -1176,6 +1250,7 @@ function App() {
   const maxOutputMul = Math.max(...selectedModels.map(m => m.outputMul || 1))
   const maxTotalTokens = Math.round(tokenCount * maxOutputMul) + maxThinkingBudget
   const toolSteps = useMemo(() => flattenSteps(TOOL_PRESETS[toolPresetIdx].steps), [toolPresetIdx])
+  const subagentWaves = SUBAGENT_PRESETS[subagentPresetIdx].waves
 
   const handleExperimentChange = (id) => {
     setIsRunning(false); setIsReset(true); setCompletedStreams(new Set())
@@ -1270,6 +1345,13 @@ function App() {
                 </select>
                 <div className="prompt-desc">{TOOL_PRESETS[toolPresetIdx].desc}</div>
               </div>
+              <div className="control-group">
+                <label>Subagents<span>{subagentWaves.reduce((s, w) => s + w.count, 0) || 'none'}</span></label>
+                <select value={subagentPresetIdx} onChange={(e) => setSubagentPresetIdx(parseInt(e.target.value))} disabled={controlsDisabled} className="prompt-select">
+                  {SUBAGENT_PRESETS.map((p, i) => <option key={i} value={i}>{p.label}</option>)}
+                </select>
+                <div className="prompt-desc">{SUBAGENT_PRESETS[subagentPresetIdx].desc}</div>
+              </div>
             </div>
 
             <div className="action-bar">
@@ -1299,6 +1381,7 @@ function App() {
                     tokenCount={tokenCount}
                     promptTokens={promptTokens}
                     toolSteps={toolSteps}
+                    subagentWaves={subagentWaves}
                     timeScale={timeScale}
                     loopEnabled={loopEnabled}
                     onCostTick={handleCostTick}
