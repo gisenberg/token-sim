@@ -71,7 +71,7 @@ const MODELS = [
   { id: 'cloud-gpt41', name: 'GPT-4.1', quant: '1M context', hardware: 'OpenAI API', tier: 'A', tokPerSec: 100, prefillRate: 30000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'good', thinking: false, thinkingBudget: 0, outputMul: 1, costIn: 2, costOut: 8, color: '#4f46e5', hwColor: '#818cf8' },
   { id: 'cloud-o3mini', name: 'o3-mini (high)', quant: '200K context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 152, prefillRate: 30000, weightGB: 0, kvPerTokKB: 0, maxCtx: '200K', quality: 'frontier', thinking: true, thinkingBudget: 2000, outputMul: 1, costIn: 1.1, costOut: 4.4, color: '#4f46e5', hwColor: '#818cf8' },
   { id: 'cloud-gpt53-codex', name: 'GPT-5.3 Codex', quant: '400K context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 71, prefillRate: 20000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'frontier', thinking: true, thinkingBudget: 2000, outputMul: 1, costIn: 1.75, costOut: 7, color: '#4f46e5', hwColor: '#818cf8' },
-  { id: 'cloud-gpt54', name: 'GPT-5.4', quant: '1M context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 83, prefillRate: 25000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 1500, outputMul: 1, costIn: 2.5, costOut: 15, costInHigh: 5, costInThreshold: 272000, color: '#4f46e5', hwColor: '#818cf8' },
+  { id: 'cloud-gpt54', name: 'GPT-5.4', quant: '1M context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 83, prefillRate: 25000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 1500, outputMul: 1, costIn: 2.5, costOut: 15, costInHigh: 5, costOutHigh: 22.5, costInThreshold: 272000, color: '#4f46e5', hwColor: '#818cf8' },
   { id: 'cloud-gpt54-mini', name: 'GPT-5.4 mini', quant: '400K context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 168, prefillRate: 40000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'frontier', thinking: true, thinkingBudget: 800, outputMul: 1, costIn: 0.4, costOut: 1.6, color: '#4f46e5', hwColor: '#818cf8' },
   { id: 'cloud-gpt54-nano', name: 'GPT-5.4 nano', quant: '400K context', hardware: 'OpenAI API', tier: 'A', tokPerSec: 184, prefillRate: 50000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'good', thinking: true, thinkingBudget: 500, outputMul: 1, costIn: 0.2, costOut: 1.25, color: '#4f46e5', hwColor: '#818cf8' },
   { id: 'cloud-gpt51-codex-mini', name: 'GPT-5.1 Codex mini', quant: '400K context', hardware: 'OpenAI API', tier: 'A', tokPerSec: 185, prefillRate: 45000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'good', thinking: true, thinkingBudget: 800, outputMul: 1, costIn: 1.25, costOut: 10, color: '#4f46e5', hwColor: '#818cf8' },
@@ -633,12 +633,13 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         const threshold = model.costInThreshold || Infinity
         const stdTokens = Math.min(totalInput, threshold)
         const highTokens = Math.max(0, totalInput - threshold)
+        const useHighTier = totalInput > threshold
         const costInput = (stdTokens / 1e6) * model.costIn + (highTokens / 1e6) * (model.costInHigh || model.costIn)
-        const costOutput = ((outputTokens + totalToolDecodeTokens) / 1e6) * model.costOut
+        const outRate = useHighTier && model.costOutHigh ? model.costOutHigh : model.costOut
+        const costOutput = ((outputTokens + totalToolDecodeTokens) / 1e6) * outRate
         const costTotal = costInput + costOutput
-        const rateLabel = model.costInHigh
-          ? (totalInput > threshold ? `$${model.costInHigh}` : `$${model.costIn}`) + `/$${model.costOut} per 1M`
-          : `$${model.costIn}/$${model.costOut} per 1M`
+        const inRate = useHighTier && model.costInHigh ? model.costInHigh : model.costIn
+        const rateLabel = `$${inRate}/$${outRate} per 1M`
         return (
           <div className="cost-row">
             <div className="cost-total">${costTotal < 0.01 ? costTotal.toFixed(4) : costTotal.toFixed(2)}</div>
