@@ -376,7 +376,7 @@ const TOOL_PRESETS = [
   ], desc: 'Read, search, edit' },
   { label: 'Standard agent (6)', steps: [
     { label: 'Read src/db/pool.ts', thinkTokens: 200, decodeTokens: 50, execMs: 200, resultTokens: 800 },
-    [  // parallel group
+    [
       { label: 'Read src/db/types.ts', thinkTokens: 100, decodeTokens: 40, execMs: 200, resultTokens: 600 },
       { label: 'Grep "Connection" in src/', thinkTokens: 100, decodeTokens: 45, execMs: 300, resultTokens: 500 },
     ],
@@ -386,20 +386,52 @@ const TOOL_PRESETS = [
   ], desc: 'Read, search, edit, test, fix' },
   { label: 'Deep exploration (10)', steps: [
     { label: 'Glob src/**/*.ts', thinkTokens: 100, decodeTokens: 30, execMs: 100, resultTokens: 300 },
-    [  // parallel reads
+    [
       { label: 'Read src/db/pool.ts', thinkTokens: 80, decodeTokens: 50, execMs: 200, resultTokens: 800 },
       { label: 'Read src/db/types.ts', thinkTokens: 80, decodeTokens: 40, execMs: 200, resultTokens: 600 },
       { label: 'Read src/db/migrations.ts', thinkTokens: 80, decodeTokens: 45, execMs: 200, resultTokens: 900 },
     ],
     { label: 'Grep "acquire" in src/', thinkTokens: 150, decodeTokens: 40, execMs: 300, resultTokens: 500 },
     { label: 'Read src/server/handler.ts', thinkTokens: 150, decodeTokens: 50, execMs: 200, resultTokens: 700 },
-    [  // parallel edits
+    [
       { label: 'Edit src/db/pool.ts', thinkTokens: 300, decodeTokens: 80, execMs: 100, resultTokens: 200 },
       { label: 'Edit src/db/pool.test.ts', thinkTokens: 300, decodeTokens: 90, execMs: 100, resultTokens: 300 },
     ],
     { label: 'Run npm test', thinkTokens: 100, decodeTokens: 30, execMs: 3000, resultTokens: 1200 },
     { label: 'Read test output', thinkTokens: 100, decodeTokens: 30, execMs: 100, resultTokens: 400 },
   ], desc: 'Full codebase exploration, multi-file edit, test' },
+  // Subagent presets — cloud only. Each subagent is a full inference cycle
+  // modeled as a parallel group with high execMs (subagent inference time)
+  // and high resultTokens (subagent output fed back to main agent).
+  // Local models can't parallelize inference, so subagents run sequentially.
+  { label: 'Agent + subagents', steps: [
+    { label: 'Read src/db/pool.ts', thinkTokens: 200, decodeTokens: 50, execMs: 200, resultTokens: 800 },
+    { label: 'Grep "Connection" in src/', thinkTokens: 150, decodeTokens: 45, execMs: 300, resultTokens: 500 },
+    [  // subagents spawned in parallel — each does its own reads + analysis
+      { label: 'Subagent: analyze pool logic', thinkTokens: 200, decodeTokens: 120, execMs: 15000, resultTokens: 2000 },
+      { label: 'Subagent: check test coverage', thinkTokens: 200, decodeTokens: 120, execMs: 18000, resultTokens: 1500 },
+      { label: 'Subagent: review error handling', thinkTokens: 200, decodeTokens: 120, execMs: 12000, resultTokens: 1800 },
+    ],
+    { label: 'Edit src/db/pool.ts', thinkTokens: 600, decodeTokens: 100, execMs: 100, resultTokens: 200 },
+    { label: 'Edit src/db/pool.test.ts', thinkTokens: 400, decodeTokens: 90, execMs: 100, resultTokens: 300 },
+    { label: 'Run npm test', thinkTokens: 100, decodeTokens: 30, execMs: 3000, resultTokens: 1200 },
+  ], desc: '3 parallel subagents for analysis, then edit + test' },
+  { label: 'Heavy subagent use', steps: [
+    { label: 'Glob src/**/*.ts', thinkTokens: 100, decodeTokens: 30, execMs: 100, resultTokens: 300 },
+    [  // first wave: explore codebase in parallel
+      { label: 'Subagent: map db layer', thinkTokens: 150, decodeTokens: 100, execMs: 20000, resultTokens: 3000 },
+      { label: 'Subagent: map API routes', thinkTokens: 150, decodeTokens: 100, execMs: 22000, resultTokens: 2800 },
+      { label: 'Subagent: map auth system', thinkTokens: 150, decodeTokens: 100, execMs: 18000, resultTokens: 2500 },
+    ],
+    { label: 'Plan refactor', thinkTokens: 800, decodeTokens: 200, execMs: 100, resultTokens: 100 },
+    [  // second wave: implement changes in parallel
+      { label: 'Subagent: refactor db layer', thinkTokens: 300, decodeTokens: 150, execMs: 25000, resultTokens: 3500 },
+      { label: 'Subagent: update API routes', thinkTokens: 300, decodeTokens: 150, execMs: 28000, resultTokens: 3200 },
+      { label: 'Subagent: update auth', thinkTokens: 300, decodeTokens: 150, execMs: 20000, resultTokens: 2800 },
+    ],
+    { label: 'Run full test suite', thinkTokens: 100, decodeTokens: 30, execMs: 8000, resultTokens: 2500 },
+    { label: 'Fix test failures', thinkTokens: 500, decodeTokens: 100, execMs: 100, resultTokens: 200 },
+  ], desc: '6 subagents across 2 waves: explore, then implement' },
 ]
 
 // Flatten tool steps: parallel groups become a single step with combined stats
