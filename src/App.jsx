@@ -966,15 +966,25 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
 }
 
 // ── Metrics Chart ──
+const formatDuration = (s) => {
+  if (s < 60) return `${Math.round(s)}s`
+  const m = Math.floor(s / 60), sec = Math.round(s % 60)
+  if (m < 60) return sec > 0 ? `${m}m ${sec}s` : `${m}m`
+  const h = Math.floor(m / 60), min = m % 60
+  return min > 0 ? `${h}h ${min}m` : `${h}h`
+}
+
 const CHART_TABS = [
   { id: 'cost', label: 'Cost', field: 'cost', fmt: (v) => `$${v < 1 ? v.toFixed(3) : v.toFixed(2)}`, zero: '$0' },
-  { id: 'input', label: 'Input', field: 'input', fmt: (v) => formatTokens(Math.round(v)), zero: '0' },
-  { id: 'output', label: 'Output', field: 'output', fmt: (v) => formatTokens(Math.round(v)), zero: '0' },
+  { id: 'input', label: 'Input tok', field: 'input', fmt: (v) => formatTokens(Math.round(v)), zero: '0' },
+  { id: 'output', label: 'Output tok', field: 'output', fmt: (v) => formatTokens(Math.round(v)), zero: '0' },
 ]
 
 const MetricsChart = ({ series, models }) => {
   const [tab, setTab] = useState('cost')
   const [hovered, setHovered] = useState(null)
+  const [mousePos, setMousePos] = useState(null)
+  const svgRef = useRef(null)
 
   if (!series || Object.keys(series).length === 0) return null
 
@@ -1000,11 +1010,13 @@ const MetricsChart = ({ series, models }) => {
           <button key={t.id} className={`chart-tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>{t.label}</button>
         ))}
       </div>
-      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
+      <svg ref={svgRef} width={W} height={H} viewBox={`0 0 ${W} ${H}`}
+        onMouseMove={(e) => { const r = svgRef.current?.getBoundingClientRect(); if (r) setMousePos({ x: e.clientX - r.left, y: e.clientY - r.top }) }}
+        onMouseLeave={() => { setHovered(null); setMousePos(null) }}>
         <text x={PAD.l - 4} y={PAD.t + 4} className="chart-label" textAnchor="end">{ct.fmt(maxV)}</text>
         <text x={PAD.l - 4} y={PAD.t + plotH} className="chart-label" textAnchor="end">{ct.zero}</text>
         <text x={PAD.l} y={H - 4} className="chart-label" textAnchor="start">0s</text>
-        <text x={W - PAD.r} y={H - 4} className="chart-label" textAnchor="end">{maxT.toFixed(0)}s</text>
+        <text x={W - PAD.r} y={H - 4} className="chart-label" textAnchor="end">{formatDuration(maxT)}</text>
         <line x1={PAD.l} y1={PAD.t + plotH} x2={PAD.l + plotW} y2={PAD.t + plotH} stroke="var(--border)" strokeWidth="1" />
         <line x1={PAD.l} y1={PAD.t} x2={PAD.l} y2={PAD.t + plotH} stroke="var(--border)" strokeWidth="1" />
         {entries.map(([key, pts]) => {
@@ -1019,14 +1031,16 @@ const MetricsChart = ({ series, models }) => {
             <path d={d} fill="none" stroke={model?.color ?? '#888'} strokeWidth={isHovered ? 2.5 : 1.5} opacity={hovered && !isHovered ? 0.25 : 0.9} />
           </g>
         })}
-        {/* Hover tooltip */}
-        {hovered && models[hovered] && (() => {
+        {/* Hover tooltip near cursor */}
+        {hovered && models[hovered] && mousePos && (() => {
           const pts = series[hovered]
           const last = pts[pts.length - 1]
-          const x = scaleX(last.t), y = scaleY(last[ct.field] ?? 0)
+          const val = last[ct.field] ?? 0
+          const tx = Math.min(mousePos.x + 8, W - 120)
+          const ty = Math.max(mousePos.y - 8, 14)
           return <g>
-            <circle cx={x} cy={y} r={3} fill={models[hovered].color} />
-            <text x={x + 6} y={y - 6} className="chart-tooltip" fill={models[hovered].color}>{models[hovered].name}: {ct.fmt(last[ct.field] ?? 0)}</text>
+            <rect x={tx - 4} y={ty - 12} width={120} height={16} rx={3} fill="var(--bg-card)" opacity="0.95" />
+            <text x={tx} y={ty} className="chart-tooltip" fill={models[hovered].color}>{models[hovered].name}: {ct.fmt(val)}</text>
           </g>
         })()}
       </svg>
