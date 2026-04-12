@@ -1277,7 +1277,7 @@ function App() {
         if (point.output < prev.output) point.output = prev.output
       }
       pts.push(point)
-      if (pts.length % 2 === 0) setCostSeries({ ...costSeriesRef.current })
+      setCostSeries({ ...costSeriesRef.current })
     }
   }, [])
   const handleStart = () => {
