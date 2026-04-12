@@ -110,7 +110,7 @@ const EXPERIMENTS = [
   { id: 'free-vs-paid', category: 'free-tier', name: 'Free vs Paid Cloud', desc: 'Can free models compete with frontier APIs?', columns: 3, models: ['free-gpt-oss-120b','cloud-haiku45','cloud-gpt54-nano','cloud-sonnet46'] },
   // Cloud vs Local
   { id: 'cloud-vs-5090', category: 'cloud-vs-local', name: 'Cloud vs RTX 5090', desc: 'Opus, Gemini Pro, GPT-5.4 vs fastest local GPU', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-gpt54','5090-gemma26b-q6','5090-gemma26b-q4','5090-qwen35b-a3b'] },
-  { id: 'cloud-vs-spark', category: 'cloud-vs-local', name: 'Cloud vs DGX Spark', desc: 'Opus, Gemini Pro, GPT-5.4 vs 122B local models', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-gpt54','spark-qwen122b-ik','spark-qwen3-coder','spark-glm45'] },
+  { id: 'cloud-vs-spark', category: 'cloud-vs-local', name: 'Cloud vs DGX Spark', desc: 'Opus, Gemini Pro, GPT-5.4 vs 122B local models', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-gpt54','spark-qwen122b-vllm','spark-qwen122b-ik','spark-qwen3-coder'] },
   { id: 'cloud-vs-m4', category: 'cloud-vs-local', name: 'Cloud vs M4 Max', desc: 'Opus, Gemini Pro, GPT-5.4 vs portable local', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-gpt54','m4-gemma26b-q6','m4-gemma31b','m4-qwen9b'] },
   // Local platforms
   { id: '5090-best', category: 'platform', name: '5090 Best 6', desc: 'Top models on RTX 5090', columns: 3, models: ['5090-gemma26b-q6','5090-gemma31b','5090-qwen27b-opus','5090-gemma26b-q4','5090-harmonic27b','5090-qwopus27b'] },
