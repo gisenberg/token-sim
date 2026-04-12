@@ -385,6 +385,27 @@
 
 .citation-link:hover { opacity: 1; }
 
+.fast-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.58rem;
+  font-family: var(--sans);
+  color: #fbbf24;
+  cursor: pointer;
+  user-select: none;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  font-weight: 600;
+}
+
+.fast-toggle input {
+  width: 12px;
+  height: 12px;
+  accent-color: #fbbf24;
+  cursor: pointer;
+}
+
 .card-status {
   font-size: 0.65rem;
   font-weight: 500;

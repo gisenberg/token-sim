@@ -66,8 +66,7 @@ const MODELS = [
   // Anthropic API — speeds from Artificial Analysis, TTFT-derived prefill rates
   // Thinking budgets: typical coding task amounts, not max capability
   // costIn/costOut: $ per 1M tokens (input/output)
-  { id: 'cloud-opus46-1m', name: 'Claude Opus 4.6', quant: '1M context', hardware: 'Anthropic API', tier: 'S', tokPerSec: 48, prefillRate: 15000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 1500, outputMul: 1, costIn: 5, costOut: 25, color: '#d97706', hwColor: '#fbbf24' },
-  { id: 'cloud-opus46-fast', name: 'Claude Opus 4.6 Fast', quant: '1M context', hardware: 'Anthropic API', tier: 'S', tokPerSec: 120, prefillRate: 15000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 1500, outputMul: 1, costIn: 30, costOut: 150, color: '#d97706', hwColor: '#fbbf24' },
+  { id: 'cloud-opus46-1m', name: 'Claude Opus 4.6', quant: '1M context', hardware: 'Anthropic API', tier: 'S', tokPerSec: 48, prefillRate: 15000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 1500, outputMul: 1, costIn: 5, costOut: 25, fast: { tokPerSec: 120, costIn: 30, costOut: 150 }, color: '#d97706', hwColor: '#fbbf24' },
   { id: 'cloud-sonnet46', name: 'Claude Sonnet 4.6', quant: '200K context', hardware: 'Anthropic API', tier: 'S', tokPerSec: 66, prefillRate: 25000, weightGB: 0, kvPerTokKB: 0, maxCtx: '200K', quality: 'frontier', thinking: true, thinkingBudget: 1200, outputMul: 1, costIn: 3, costOut: 15, color: '#d97706', hwColor: '#fbbf24' },
   { id: 'cloud-haiku45', name: 'Claude Haiku 4.5', quant: '200K context', hardware: 'Anthropic API', tier: 'A', tokPerSec: 92, prefillRate: 60000, weightGB: 0, kvPerTokKB: 0, maxCtx: '200K', quality: 'good', thinking: false, thinkingBudget: 0, outputMul: 1, costIn: 1, costOut: 5, color: '#d97706', hwColor: '#fbbf24' },
   // Google API
@@ -101,19 +100,19 @@ const EXPERIMENT_CATEGORIES = [
 
 const EXPERIMENTS = [
   // Cloud API
-  { id: 'anthropic-lineup', category: 'cloud', name: 'Anthropic Lineup', desc: 'Opus, Opus Fast, Sonnet, Haiku', columns: 2, models: ['cloud-opus46-1m','cloud-opus46-fast','cloud-sonnet46','cloud-haiku45'] },
+  { id: 'anthropic-lineup', category: 'cloud', name: 'Anthropic Lineup', desc: 'Opus 4.6 vs Sonnet 4.6 vs Haiku 4.5', columns: 3, models: ['cloud-opus46-1m','cloud-sonnet46','cloud-haiku45'] },
   { id: 'google-lineup', category: 'cloud', name: 'Google Lineup', desc: 'Gemini 3.1 Pro vs 3 Flash vs 2.5 Pro', columns: 3, models: ['cloud-gemini31pro','cloud-gemini3flash','cloud-gemini25pro'] },
   { id: 'openai-lineup', category: 'cloud', name: 'OpenAI Lineup', desc: 'GPT-5.4 family + Codex models', columns: 3, models: ['cloud-gpt54','cloud-gpt54-mini','cloud-gpt54-nano','cloud-gpt53-codex','cloud-gpt51-codex-mini','cloud-o3mini'] },
-  { id: 'cloud-all', category: 'cloud', name: 'Cloud Frontier', desc: 'Top model from each provider', columns: 3, models: ['cloud-opus46-1m','cloud-opus46-fast','cloud-gemini31pro','cloud-sonnet46','cloud-gemini3flash','cloud-gpt54'] },
+  { id: 'cloud-all', category: 'cloud', name: 'Cloud Frontier', desc: 'Top model from each provider', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-sonnet46','cloud-gemini3flash','cloud-gpt54'] },
 { id: 'cloud-speed', category: 'cloud', name: 'Cloud Speed Demons', desc: 'Fastest output from each provider', columns: 3, models: ['cloud-haiku45','cloud-gemini3flash','cloud-gpt54-nano'] },
   // Free Tier
   { id: 'free-vs-local-s', category: 'free-tier', name: 'Free API vs Local S-Tier', desc: 'GPT-OSS 120B (free) vs best local models on RTX 5090', columns: 3, models: ['free-gpt-oss-120b','5090-gemma26b-q6','5090-gemma31b','5090-harmonic27b'] },
   { id: 'free-vs-local-c', category: 'free-tier', name: 'Free API vs Local C-Tier', desc: 'GPT-OSS 120B (free) vs Qwen 35B — same LRU gap, different models', columns: 2, models: ['free-gpt-oss-120b','5090-qwen35b-a3b'] },
   { id: 'free-vs-paid', category: 'free-tier', name: 'Free vs Paid Cloud', desc: 'Can free models compete with frontier APIs?', columns: 3, models: ['free-gpt-oss-120b','cloud-haiku45','cloud-gpt54-nano','cloud-sonnet46'] },
   // Cloud vs Local
-  { id: 'cloud-vs-5090', category: 'cloud-vs-local', name: 'Cloud vs RTX 5090', desc: 'Opus, Opus Fast, Gemini Pro vs fastest local GPU', columns: 3, models: ['cloud-opus46-1m','cloud-opus46-fast','cloud-gemini31pro','5090-gemma26b-q6','5090-gemma26b-q4','5090-qwen35b-a3b'] },
-  { id: 'cloud-vs-spark', category: 'cloud-vs-local', name: 'Cloud vs DGX Spark', desc: 'Opus, Opus Fast, Gemini Pro vs 122B local models', columns: 3, models: ['cloud-opus46-1m','cloud-opus46-fast','cloud-gemini31pro','spark-qwen122b-vllm','spark-qwen122b-ik','spark-qwen3-coder'] },
-  { id: 'cloud-vs-m4', category: 'cloud-vs-local', name: 'Cloud vs M4 Max', desc: 'Opus, Opus Fast, Gemini Pro vs portable local', columns: 3, models: ['cloud-opus46-1m','cloud-opus46-fast','cloud-gemini31pro','m4-gemma26b-q6','m4-gemma31b','m4-qwen9b'] },
+  { id: 'cloud-vs-5090', category: 'cloud-vs-local', name: 'Cloud vs RTX 5090', desc: 'Opus, Gemini Pro, GPT-5.4 vs fastest local GPU', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-gpt54','5090-gemma26b-q6','5090-gemma26b-q4','5090-qwen35b-a3b'] },
+  { id: 'cloud-vs-spark', category: 'cloud-vs-local', name: 'Cloud vs DGX Spark', desc: 'Opus, Gemini Pro, GPT-5.4 vs 122B local models', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-gpt54','spark-qwen122b-vllm','spark-qwen122b-ik','spark-qwen3-coder'] },
+  { id: 'cloud-vs-m4', category: 'cloud-vs-local', name: 'Cloud vs M4 Max', desc: 'Opus, Gemini Pro, GPT-5.4 vs portable local', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-gpt54','m4-gemma26b-q6','m4-gemma31b','m4-qwen9b'] },
   // Local platforms
   { id: '5090-best', category: 'platform', name: '5090 Best 6', desc: 'Top models on RTX 5090', columns: 3, models: ['5090-gemma26b-q6','5090-gemma31b','5090-qwen27b-opus','5090-gemma26b-q4','5090-harmonic27b','5090-qwopus27b'] },
   { id: 'm4-best', category: 'platform', name: 'M4 Max Best 6', desc: 'Top models on M4 Max — bandwidth-limited', columns: 3, models: ['m4-gemma31b','m4-gemma26b-q6','m4-qwen27b-mlx','m4-qwen27b-opus','m4-gemma26b-q4','m4-qwen9b'] },
@@ -468,6 +467,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
   const [toolLog, setToolLog] = useState([])
   const [outputCount, setOutputCount] = useState(0)
   const [wallTime, setWallTime] = useState(0)
+  const [fastMode, setFastMode] = useState(false)
   const [activeSubagents, setActiveSubagents] = useState(0)
   const [subagentWaveIdx, setSubagentWaveIdx] = useState(-1)
   const [subagentTokensIn, setSubagentTokensIn] = useState(0)
@@ -500,11 +500,15 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
   const hasStartedRef = useRef(false)
   const toolResultsRef = useRef(0)
 
-  const thinkingBudget = model.thinkingBudget
+  // Apply fast mode overrides
+  const effectiveModel = (fastMode && model.fast) ? { ...model, tokPerSec: model.fast.tokPerSec, costIn: model.fast.costIn, costOut: model.fast.costOut } : model
+  const thinkingBudget = effectiveModel.thinkingBudget
   const effectiveOutput = Math.round(tokenCount * (model.outputMul || 1))
   const totalTokens = thinkingBudget + effectiveOutput
   const tsRef = useRef(timeScale)
   tsRef.current = timeScale
+  const emRef = useRef(effectiveModel)
+  emRef.current = effectiveModel
 
   const scrollToBottom = useCallback(() => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current)
@@ -566,11 +570,12 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
           const runIn = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current + toolResultsRef.current
           const runOut = hiddenTokensRef.current + totalIndexRef.current
           // Compute cost for cloud models
-          if (model.costIn != null) {
-            const threshold = model.costInThreshold ?? Infinity
-            const useHigh = (parseInt(model.maxCtx) * 1000) > threshold
-            const inRate = useHigh && model.costInHigh ? model.costInHigh : model.costIn
-            const outRate = useHigh && model.costOutHigh ? model.costOutHigh : model.costOut
+          const em = emRef.current
+          if (em.costIn != null) {
+            const threshold = em.costInThreshold ?? Infinity
+            const useHigh = (parseInt(em.maxCtx) * 1000) > threshold
+            const inRate = useHigh && em.costInHigh ? em.costInHigh : em.costIn
+            const outRate = useHigh && em.costOutHigh ? em.costOutHigh : em.costOut
             runCostRef.current = (runIn / 1e6) * inRate + (runOut / 1e6) * outRate
           }
           if (onCostTick) {
@@ -622,7 +627,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         if (thinkCount <= 0) { next(); return }
         setPhase('thinking')
         setThinkingTokensGenerated(0)
-        const baseDurationMs = (thinkCount / model.tokPerSec) * 1000
+        const baseDurationMs = (thinkCount / emRef.current.tokPerSec) * 1000
         const thinkStart = Date.now()
         const hiddenBefore = hiddenTokensRef.current
         const tickThink = () => {
@@ -645,7 +650,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         const tickInterval = 16
         intervalRef.current = setInterval(() => {
           const elapsed = Date.now() - streamStart
-          const tokPerMs = model.tokPerSec * getTs() / 1000
+          const tokPerMs = emRef.current.tokPerSec * getTs() / 1000
           const shouldBe = Math.min(baseIndex + Math.floor(elapsed * tokPerMs), target, effectiveOutput)
           if (totalIndexRef.current < shouldBe) {
             const batch = []
@@ -702,7 +707,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         // Wall time: subagent inference time (context/prefillRate + tools + output/tokPerSec)
         const agentPrefillMs = (wave.contextPerAgent / model.prefillRate) * 1000
         const agentToolMs = (wave.toolsPerAgent ?? 3) * 500 // ~500ms per tool avg
-        const agentDecodeMs = (wave.outputPerAgent / model.tokPerSec) * 1000
+        const agentDecodeMs = (wave.outputPerAgent / emRef.current.tokPerSec) * 1000
         const waveMs = (agentPrefillMs + agentToolMs + agentDecodeMs) / getTs()
 
         // Track subagent tokens
@@ -831,7 +836,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
             if (!decodeStartRef.current) decodeStartRef.current = Date.now()
             streamChunk(perStepOutput, () => {
               setPhase('tool-decode')
-              const decodeDurationMs = (step.decodeTokens / model.tokPerSec) * 1000
+              const decodeDurationMs = (step.decodeTokens / emRef.current.tokPerSec) * 1000
               const decodeHiddenBefore = hiddenTokensRef.current
               const decodeStart = Date.now()
               const tickDecode = () => {
@@ -940,6 +945,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
           <span className="model-quant">
             {model.quant}
             <a className="citation-link" href={CITATIONS[model.hardware]} target="_blank" rel="noopener noreferrer" title="View benchmark data">cite</a>
+            {model.fast && <label className="fast-toggle"><input type="checkbox" checked={fastMode} onChange={(e) => setFastMode(e.target.checked)} />Fast</label>}
           </span>
         </div>
         <span className={`card-status ${phase}`}>{statusLabel}</span>
@@ -947,7 +953,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
 
       <div className="hw-row">
         <span className="hw-badge" style={{ color: model.hwColor }}>{model.hardware}</span>
-        <span className="hw-spec">{model.tokPerSec} tok/s</span>
+        <span className="hw-spec">{effectiveModel.tokPerSec} tok/s</span>
         <span className="hw-spec">{model.maxCtx} ctx</span>
         <span className="hw-spec">{model.quality}</span>
       </div>
@@ -976,11 +982,11 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         </div>
       </div>
 
-      {hwTotal === 0 && model.costIn != null && (() => {
-        const threshold = model.costInThreshold ?? Infinity
+      {hwTotal === 0 && effectiveModel.costIn != null && (() => {
+        const threshold = effectiveModel.costInThreshold ?? Infinity
         const useHighTier = maxCtxTokens > threshold
-        const inRate = useHighTier && model.costInHigh ? model.costInHigh : model.costIn
-        const outRate = useHighTier && model.costOutHigh ? model.costOutHigh : model.costOut
+        const inRate = useHighTier && effectiveModel.costInHigh ? effectiveModel.costInHigh : effectiveModel.costIn
+        const outRate = useHighTier && effectiveModel.costOutHigh ? effectiveModel.costOutHigh : effectiveModel.costOut
         // Single source of truth: cumulativeCostRef (completed runs) + runCostRef (in-progress)
         const totalCost = Math.max(highWaterRef.current.cost, cumulativeCostRef.current + runCostRef.current)
         const rateLabel = `$${inRate}/$${outRate} per 1M`
