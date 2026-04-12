@@ -489,6 +489,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
   const totalWallTimeRef = useRef(0)
   const runSimTimeRef = useRef(0)
   const lastTickRef = useRef(0)
+  const highWaterRef = useRef({ cost: 0, input: 0, output: 0 })
   const hiddenTokensRef = useRef(0) // thinking + tool decode tokens (not visible but billed)
   const cumulativeInRef = useRef(0)
   const cumulativeOutRef = useRef(0)
@@ -540,7 +541,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       setElapsedTime(0); setPrefillElapsed(0); setCompactElapsed(0); setPrefillSize(0)
       setToolResultTokens(0); setCurrentToolIdx(-1); setToolLog([]); setOutputCount(0); setWallTime(0); setActiveSubagents(0); setSubagentWaveIdx(-1); setSubagentTokensIn(0); setSubagentTokensOut(0)
       setLoopCount(0); setCumulativeIn(0); setCumulativeOut(0); setCumulativeCost(0); setGeneration(0)
-      streamAccCtxRef.current = 0; cumulativeCostRef.current = 0; runCostRef.current = 0; totalSimTimeRef.current = 0; totalWallTimeRef.current = 0; hiddenTokensRef.current = 0; cumulativeInRef.current = 0; cumulativeOutRef.current = 0; runSimTimeRef.current = 0; lastTickRef.current = 0
+      streamAccCtxRef.current = 0; cumulativeCostRef.current = 0; runCostRef.current = 0; totalSimTimeRef.current = 0; totalWallTimeRef.current = 0; hiddenTokensRef.current = 0; cumulativeInRef.current = 0; cumulativeOutRef.current = 0; runSimTimeRef.current = 0; lastTickRef.current = 0; highWaterRef.current = { cost: 0, input: 0, output: 0 }
       totalIndexRef.current = 0; hasStartedRef.current = false
       startTimeRef.current = null; decodeStartRef.current = null; toolResultsRef.current = 0
       return
@@ -572,11 +573,14 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
             runCostRef.current = (runIn / 1e6) * inRate + (runOut / 1e6) * outRate
           }
           if (onCostTick) {
-            onCostTick(streamIndex, totalSimTimeRef.current + simTime, {
-              cost: cumulativeCostRef.current + runCostRef.current,
-              input: runIn + (cumulativeInRef.current ?? 0),
-              output: runOut + (cumulativeOutRef.current ?? 0),
-            })
+            const hw = highWaterRef.current
+            const metrics = {
+              cost: Math.max(hw.cost, cumulativeCostRef.current + runCostRef.current),
+              input: Math.max(hw.input, runIn + (cumulativeInRef.current ?? 0)),
+              output: Math.max(hw.output, runOut + (cumulativeOutRef.current ?? 0)),
+            }
+            highWaterRef.current = metrics
+            onCostTick(streamIndex, totalSimTimeRef.current + simTime, metrics)
           }
         }
       }, 200)
@@ -977,7 +981,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         const inRate = useHighTier && model.costInHigh ? model.costInHigh : model.costIn
         const outRate = useHighTier && model.costOutHigh ? model.costOutHigh : model.costOut
         // Single source of truth: cumulativeCostRef (completed runs) + runCostRef (in-progress)
-        const totalCost = cumulativeCostRef.current + runCostRef.current
+        const totalCost = Math.max(highWaterRef.current.cost, cumulativeCostRef.current + runCostRef.current)
         const rateLabel = `$${inRate}/$${outRate} per 1M`
         return (
           <div className="cost-row">
