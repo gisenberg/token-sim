@@ -1374,7 +1374,7 @@ function App() {
               </label>
               <div className="time-scale">
                 <span className="time-scale-label">{timeScale}x</span>
-                <input type="range" min="0" max="4" step="1" value={[1,2,5,10,20].indexOf(timeScale)} onChange={(e) => setTimeScale([1,2,5,10,20][e.target.value])} className="time-scale-slider" />
+                <input type="range" min="0" max="6" step="1" value={[1,2,5,10,20,50,100].indexOf(timeScale)} onChange={(e) => setTimeScale([1,2,5,10,20,50,100][e.target.value])} className="time-scale-slider" />
               </div>
             </div>
 
