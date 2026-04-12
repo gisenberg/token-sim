@@ -810,10 +810,8 @@ function App() {
             ))}
           </div>
         ))}
-        <div className="nav-category">
-          <button className={`nav-item ${route.page === 'about' ? 'active' : ''}`} onClick={() => navigate('about')}>
-            <span className="nav-item-name">About</span>
-          </button>
+        <div className="nav-footer">
+          <button className={`nav-about ${route.page === 'about' ? 'active' : ''}`} onClick={() => navigate('about')}>About this simulator</button>
         </div>
       </nav>
 

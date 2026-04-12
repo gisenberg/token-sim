@@ -97,6 +97,30 @@
   margin-left: 8px;
 }
 
+.nav-footer {
+  margin-top: auto;
+  padding: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.nav-about {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.75rem;
+  font-family: var(--sans);
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.nav-about:hover { border-color: var(--border-light); color: var(--text-bright); }
+.nav-about.active { border-color: var(--text); color: var(--text-heading); }
+
 /* ── Header ── */
 
 .app-header {
