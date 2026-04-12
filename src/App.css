@@ -489,6 +489,39 @@
   flex-shrink: 0;
 }
 
+/* ── Cost Row (Cloud) ── */
+
+.cost-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px 4px;
+}
+
+.cost-total {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-heading);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.cost-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 0.6rem;
+  color: var(--text);
+}
+
+.cost-item {
+  font-variant-numeric: tabular-nums;
+}
+
+.cost-breakdown {
+  opacity: 0.5;
+}
+
 .cloud-badge {
   width: 32px;
   height: 32px;
