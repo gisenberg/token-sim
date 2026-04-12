@@ -343,15 +343,17 @@ const renderMarkdown = (text) => {
 // ── Constants ──
 const SYSTEM_TOKENS = 12000
 
+// Prompt context = conversation history + current turn content (system tokens separate).
+// Grows ~1-20K per turn depending on tool intensity. Compaction resets accumulation.
 const PROMPT_PRESETS = [
-  { label: 'Quick question', tokens: 500, desc: 'Short prompt, no context' },
-  { label: 'Single file edit', tokens: 2000, desc: '~1 file + instructions' },
-  { label: 'Multi-file task', tokens: 8000, desc: '3-5 files + conversation' },
-  { label: 'Large refactor', tokens: 24000, desc: '10+ files + history' },
-  { label: 'Deep exploration', tokens: 64000, desc: 'Many files + long conversation' },
-  { label: 'Small C++ project', tokens: 120000, desc: '~50K LOC, CMake, few deps' },
-  { label: 'Medium C++ project', tokens: 350000, desc: '~200K LOC, engine subsystem' },
-  { label: 'Large C++ / UE5 project', tokens: 800000, desc: '~500K+ LOC, Unreal from source' },
+  { label: 'Quick fix', tokens: 500, desc: 'Fresh session, short question' },
+  { label: 'Single file', tokens: 2000, desc: '1 file read + instruction (~turn 1)' },
+  { label: 'Bug investigation', tokens: 8000, desc: '3-5 file reads, 2-3 turns' },
+  { label: 'Feature build', tokens: 25000, desc: '8-10 turns, multi-file reads + edits' },
+  { label: 'Extended session', tokens: 60000, desc: '20+ turns, test cycles, iterations' },
+  { label: 'Deep refactor', tokens: 120000, desc: '30+ turns, multi-file overhaul' },
+  { label: 'Long agent session', tokens: 250000, desc: '50+ turns on a 1M context model' },
+  { label: 'Max context', tokens: 500000, desc: 'Sustained heavy use, deep codebase' },
 ]
 
 const OUTPUT_PRESETS = [
@@ -1133,7 +1135,7 @@ function App() {
   const costSeriesRef = useRef({})
   const [isReset, setIsReset] = useState(false)
   const [tokenCount, setTokenCount] = useState(4000)
-  const [promptTokens, setPromptTokens] = useState(24000)
+  const [promptTokens, setPromptTokens] = useState(25000)
   const [toolPresetIdx, setToolPresetIdx] = useState(2)
   const [timeScale, setTimeScale] = useState(1)
   const [loopEnabled, setLoopEnabled] = useState(false)
