@@ -920,6 +920,7 @@ function App() {
   const [completedStreams, setCompletedStreams] = useState(new Set())
   const [cumulatives, setCumulatives] = useState({})
   const [accumulatedContext, setAccumulatedContext] = useState(0) // carries forward across loops
+  const pendingLoopRef = useRef(false)
 
   useEffect(() => {
     const onHash = () => setRoute(getHashRoute())
@@ -938,6 +939,7 @@ function App() {
   const toolSteps = useMemo(() => flattenSteps(TOOL_PRESETS[toolPresetIdx].steps), [toolPresetIdx])
 
   const handleExperimentChange = (id) => {
+    pendingLoopRef.current = false
     setIsRunning(false); setIsReset(true); setCompletedStreams(new Set()); setCumulatives({}); setAccumulatedContext(0)
     navigate(id)
     setTimeout(() => setIsReset(false), 100)
@@ -946,7 +948,7 @@ function App() {
     setCompletedStreams(prev => { const next = new Set(prev); next.add(index); return next })
   }, [])
   const handleStart = () => { setIsReset(false); setCompletedStreams(new Set()); setAccumulatedContext(0); setIsRunning(true) }
-  const handleReset = () => { setIsRunning(false); setIsReset(true); setCompletedStreams(new Set()); setCumulatives({}); setAccumulatedContext(0); setTimeout(() => setIsReset(false), 100) }
+  const handleReset = () => { pendingLoopRef.current = false; setIsRunning(false); setIsReset(true); setCompletedStreams(new Set()); setCumulatives({}); setAccumulatedContext(0); setTimeout(() => setIsReset(false), 100) }
 
   const tokens = useMemo(() => generateText(maxTotalTokens), [maxTotalTokens])
   const allComplete = completedStreams.size >= experiment.models.length
@@ -998,7 +1000,6 @@ function App() {
   }, [allComplete, loopEnabled, isRunning, selectedModels, promptTokens, tokenCount, toolSteps, accumulatedContext])
 
   // When reset is active and loop is enabled, clear reset and restart
-  const pendingLoopRef = useRef(false)
   useEffect(() => {
     if (isReset && loopEnabled && !isRunning) {
       pendingLoopRef.current = true
