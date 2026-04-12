@@ -184,6 +184,103 @@ test("concurrent acquire does not return same connection", async () => {
 \`\`\`
 
 The changes are backward-compatible. The \`inUse\` tracking adds negligible overhead since it's a Set lookup (O(1)).
+
+Now let me add the retry logic with exponential backoff for transient failures:
+
+\`\`\`typescript
+class RetryPolicy {
+  constructor(
+    private maxRetries = 3,
+    private baseDelayMs = 100,
+    private maxDelayMs = 5000
+  ) {}
+
+  async execute<T>(fn: () => Promise<T>): Promise<T> {
+    let lastError: Error;
+    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (err) {
+        lastError = err as Error;
+        if (attempt === this.maxRetries) break;
+        if (!this.isRetryable(err)) throw err;
+        const delay = Math.min(
+          this.baseDelayMs * Math.pow(2, attempt),
+          this.maxDelayMs
+        );
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+    throw lastError!;
+  }
+
+  private isRetryable(err: unknown): boolean {
+    if (err instanceof ConnectionError) return true;
+    if (err instanceof TimeoutError) return true;
+    return false;
+  }
+}
+\`\`\`
+
+The migration script needs to handle the schema change gracefully:
+
+\`\`\`diff
+--- a/migrations/003_add_inuse_tracking.sql
++++ b/migrations/003_add_inuse_tracking.sql
+@@ -1,4 +1,12 @@
+ -- Migration: Add connection tracking metadata
++ALTER TABLE connections
++  ADD COLUMN in_use BOOLEAN DEFAULT FALSE,
++  ADD COLUMN acquired_at TIMESTAMPTZ,
++  ADD COLUMN acquired_by TEXT;
++
++CREATE INDEX idx_connections_in_use
++  ON connections (in_use)
++  WHERE in_use = TRUE;
++
++-- Backfill: mark all existing connections as available
++UPDATE connections SET in_use = FALSE WHERE in_use IS NULL;
+\`\`\`
+
+Finally, the monitoring dashboard query to track pool utilization:
+
+\`\`\`typescript
+async function getPoolMetrics(pool: ConnectionPool): Promise<PoolMetrics> {
+  const total = pool.connections.length;
+  const active = pool.connections.filter((c) => c.state === "active").length;
+  const idle = total - active;
+  const waiting = pool.waiting.length;
+
+  return {
+    total,
+    active,
+    idle,
+    waiting,
+    utilization: total > 0 ? active / total : 0,
+    avgWaitMs: pool.getAverageWaitTime(),
+    p99WaitMs: pool.getPercentileWaitTime(99),
+  };
+}
+
+// Export as Prometheus metrics
+app.get("/metrics", async (req, res) => {
+  const metrics = await getPoolMetrics(pool);
+  res.type("text/plain").send(\`
+# HELP pool_connections_total Total connections in pool
+pool_connections_total \${metrics.total}
+# HELP pool_connections_active Currently active connections
+pool_connections_active \${metrics.active}
+# HELP pool_utilization Pool utilization ratio
+pool_utilization \${metrics.utilization.toFixed(3)}
+# HELP pool_wait_avg_ms Average wait time in ms
+pool_wait_avg_ms \${metrics.avgWaitMs.toFixed(1)}
+# HELP pool_wait_p99_ms 99th percentile wait time
+pool_wait_p99_ms \${metrics.p99WaitMs.toFixed(1)}
+  \`.trim());
+});
+\`\`\`
+
+This gives us full observability into the connection pool behavior in production.
 `.trim()
 
 const tokenizeResponse = (text) => {
@@ -314,7 +411,7 @@ const TIER_COLORS = { S: '#fbbf24', A: '#34d399', B: '#60a5fa', C: '#a78bfa', D:
 const formatTime = (s) => s < 1 ? `${Math.round(s * 1000)}ms` : s < 10 ? `${s.toFixed(1)}s` : `${Math.round(s)}s`
 
 // ── TokenStream Component ──
-const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptTokens, toolSteps, onComplete, streamIndex }) => {
+const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptTokens, toolSteps, timeScale, cumulative, onComplete, streamIndex }) => {
   const [displayedTokens, setDisplayedTokens] = useState([])
   const [phase, setPhase] = useState('idle')
   const [thinkingTokensGenerated, setThinkingTokensGenerated] = useState(0)
@@ -383,10 +480,12 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       const compactMs = needsCompact ? (compactTokens / (model.prefillRate * 0.5)) * 1000 : 0
 
       // Animate a progress bar over durationMs, then call next()
+      const ts = timeScale || 1
       const animateBar = (setter, durationMs, next) => {
+        const scaledMs = durationMs / ts
         const start = Date.now()
         const tick = () => {
-          const p = Math.min((Date.now() - start) / durationMs, 1)
+          const p = Math.min((Date.now() - start) / scaledMs, 1)
           setter(p)
           if (p < 1) timeoutRef.current = setTimeout(tick, 16)
           else next()
@@ -407,7 +506,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         if (thinkCount <= 0) { next(); return }
         setPhase('thinking')
         setThinkingTokensGenerated(0)
-        const thinkMs = (thinkCount / model.tokPerSec) * 1000
+        const thinkMs = (thinkCount / model.tokPerSec) * 1000 / ts
         const thinkStart = Date.now()
         const tickThink = () => {
           const elapsed = Date.now() - thinkStart
@@ -423,7 +522,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         if (count <= 0) { next(); return }
         setPhase('streaming')
         const target = totalIndexRef.current + count
-        const interval = 1000 / model.tokPerSec
+        const interval = 1000 / model.tokPerSec / ts
         intervalRef.current = setInterval(() => {
           if (totalIndexRef.current < target && totalIndexRef.current < effectiveOutput) {
             setDisplayedTokens(prev => [...prev, tokens[totalIndexRef.current]])
@@ -489,7 +588,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
             if (!decodeStartRef.current) decodeStartRef.current = Date.now()
             streamChunk(perStepOutput, () => {
               setPhase('tool-decode')
-              const decodeMs = (step.decodeTokens / model.tokPerSec) * 1000
+              const decodeMs = (step.decodeTokens / model.tokPerSec) * 1000 / ts
               timeoutRef.current = setTimeout(() => {
                 setPhase('tool-exec')
                 const logEntries = step.parallel
@@ -509,7 +608,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
                   lastStepTokens = added
                   setToolResultTokens(toolResultsRef.current)
                   runToolStep(i + 1)
-                }, step.execMs)
+                }, step.execMs / ts)
               }, decodeMs)
             })
           })
@@ -537,7 +636,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       if (intervalRef.current) clearInterval(intervalRef.current)
       if (timerRef.current) clearInterval(timerRef.current)
     }
-  }, [isRunning, isReset, model, promptTokens, thinkingBudget, effectiveOutput, totalTokens, tokens, toolSteps, onComplete, streamIndex, clearTimers])
+  }, [isRunning, isReset, model, promptTokens, thinkingBudget, effectiveOutput, totalTokens, tokens, toolSteps, timeScale, onComplete, streamIndex, clearTimers])
 
   useEffect(() => {
     if (displayedTokens.length > 0 || toolLog.length > 0) scrollToBottom()
@@ -674,6 +773,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         <div className="stat"><span className="stat-label">Thinking</span><span className={`stat-value ${!model.thinking ? 'stat-dim' : ''}`}>{thinkingLabel}</span></div>
         <div className="stat"><span className="stat-label">Time</span><span className="stat-value">{elapsedTime}s</span></div>
         {rate && <div className="stat"><span className="stat-label">Actual</span><span className="stat-value">{rate} tok/s</span></div>}
+        {cumulative && cumulative.loops > 0 && <div className="stat"><span className="stat-label">Total ({cumulative.loops} runs)</span><span className="stat-value">{(cumulative.input / 1000).toFixed(0)}K in / {(cumulative.output / 1000).toFixed(0)}K out</span></div>}
       </div>
 
       <div className="progress-track"><div className="progress-fill" style={{ width: `${totalProgress}%`, background: model.color }} /></div>
@@ -788,7 +888,10 @@ function App() {
   const [tokenCount, setTokenCount] = useState(4000)
   const [promptTokens, setPromptTokens] = useState(24000)
   const [toolPresetIdx, setToolPresetIdx] = useState(2)
+  const [timeScale, setTimeScale] = useState(1)
+  const [loopEnabled, setLoopEnabled] = useState(false)
   const [completedStreams, setCompletedStreams] = useState(new Set())
+  const [cumulatives, setCumulatives] = useState({})
 
   useEffect(() => {
     const onHash = () => setRoute(getHashRoute())
@@ -807,13 +910,39 @@ function App() {
   const toolSteps = useMemo(() => flattenSteps(TOOL_PRESETS[toolPresetIdx].steps), [toolPresetIdx])
 
   const handleExperimentChange = (id) => {
-    setIsRunning(false); setIsReset(true); setCompletedStreams(new Set())
+    setIsRunning(false); setIsReset(true); setCompletedStreams(new Set()); setCumulatives({})
     navigate(id)
     setTimeout(() => setIsReset(false), 100)
   }
-  const handleComplete = useCallback((index) => { setCompletedStreams(prev => { const next = new Set(prev); next.add(index); return next }) }, [])
+  const handleComplete = useCallback((index) => {
+    setCompletedStreams(prev => { const next = new Set(prev); next.add(index); return next })
+  }, [])
   const handleStart = () => { setIsReset(false); setCompletedStreams(new Set()); setIsRunning(true) }
-  const handleReset = () => { setIsRunning(false); setIsReset(true); setCompletedStreams(new Set()); setTimeout(() => setIsReset(false), 100) }
+  const handleReset = () => { setIsRunning(false); setIsReset(true); setCompletedStreams(new Set()); setCumulatives({}); setTimeout(() => setIsReset(false), 100) }
+
+  // Loop: when all complete, accumulate tallies and restart
+  useEffect(() => {
+    if (allComplete && loopEnabled && isRunning) {
+      setCumulatives(prev => {
+        const next = { ...prev }
+        selectedModels.forEach((m, i) => {
+          const inputTok = SYSTEM_TOKENS + promptTokens + toolSteps.reduce((s, t) => s + (t.resultTokens || 0) + (t.decodeTokens || 0) + (t.thinkTokens || 0), 0)
+          const outputTok = Math.round(tokenCount * (m.outputMul || 1)) + (m.thinkingBudget || 0)
+          const key = m.id + '-' + i
+          if (!next[key]) next[key] = { loops: 0, input: 0, output: 0 }
+          next[key].loops++
+          next[key].input += inputTok
+          next[key].output += outputTok
+        })
+        return next
+      })
+      const timer = setTimeout(() => {
+        setIsReset(true)
+        setTimeout(() => { setIsReset(false); setCompletedStreams(new Set()); setIsRunning(true) }, 150)
+      }, 500)
+      return () => clearTimeout(timer)
+    }
+  }, [allComplete, loopEnabled, isRunning, selectedModels, promptTokens, tokenCount, toolSteps])
 
   const tokens = useMemo(() => generateText(maxTotalTokens), [maxTotalTokens])
   const allComplete = completedStreams.size >= experiment.models.length
@@ -881,6 +1010,14 @@ function App() {
             <div className="action-bar">
               <button onClick={handleStart} disabled={controlsDisabled} className="btn-start">{controlsDisabled ? 'Running...' : 'Start'}</button>
               <button onClick={handleReset} className="btn-reset">Stop</button>
+              <label className="loop-toggle">
+                <input type="checkbox" checked={loopEnabled} onChange={(e) => setLoopEnabled(e.target.checked)} />
+                Loop
+              </label>
+              <div className="time-scale">
+                <span className="time-scale-label">{timeScale}x</span>
+                <input type="range" min="0" max="4" step="1" value={[1,2,5,10,20].indexOf(timeScale)} onChange={(e) => setTimeScale([1,2,5,10,20][e.target.value])} className="time-scale-slider" />
+              </div>
             </div>
 
             {rows.map(({ start, models }) => (
@@ -895,6 +1032,8 @@ function App() {
                     tokenCount={tokenCount}
                     promptTokens={promptTokens}
                     toolSteps={toolSteps}
+                    timeScale={timeScale}
+                    cumulative={cumulatives[model.id + '-' + (start + i)]}
                     onComplete={handleComplete}
                     streamIndex={start + i}
                   />

@@ -136,8 +136,63 @@
 
 .action-bar {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 12px;
   margin-bottom: 20px;
+}
+
+.loop-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.78rem;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+  margin-left: 8px;
+}
+
+.loop-toggle input {
+  accent-color: var(--text-bright);
+  cursor: pointer;
+}
+
+.time-scale {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+}
+
+.time-scale-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-bright);
+  min-width: 28px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.time-scale-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 80px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border);
+  outline: none;
+  cursor: pointer;
+}
+
+.time-scale-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text-bright);
+  border: 2px solid var(--bg);
+  box-shadow: 0 0 0 1px var(--border-light);
+  cursor: pointer;
 }
 
 .app-header h1 {
