@@ -1049,6 +1049,15 @@ const MetricsChart = ({ series, models, hasCloud }) => {
           </g>
         })()}
       </svg>
+      <div className="chart-legend">
+        {entries.map(([key]) => {
+          const model = models[key]
+          if (!model) return null
+          return <span key={key} className={`chart-legend-item ${hovered === key ? 'chart-legend-active' : ''} ${hovered && hovered !== key ? 'chart-legend-dim' : ''}`} onMouseEnter={() => setHovered(key)} onMouseLeave={() => setHovered(null)}>
+            <span className="chart-legend-dot" style={{ background: model.color }} />{model.name}
+          </span>
+        })}
+      </div>
     </div>
   )
 }
