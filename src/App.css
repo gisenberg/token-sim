@@ -318,6 +318,7 @@
 .card-status.compacting { color: #f87171; }
 .card-status.prefill { color: #fbbf24; }
 .card-status.thinking { color: #fbbf24; }
+.card-status.tool-decode, .card-status.tool-exec { color: #f59e0b; }
 .card-status.streaming { color: var(--text-bright); }
 .card-status.complete { color: #34d399; }
 
@@ -382,6 +383,7 @@
 
 .ctx-seg { height: 100%; min-width: 1px; transition: width 0.15s; }
 .ctx-seg.ctx-system, .ctx-swatch.ctx-system { background: #475569; }
+.ctx-seg.ctx-tool, .ctx-swatch.ctx-tool { background: #f59e0b; }
 .ctx-seg.ctx-prompt, .ctx-swatch.ctx-prompt { background: #64748b; }
 .ctx-seg.ctx-thinking, .ctx-swatch.ctx-thinking { background: #fbbf24; }
 .ctx-seg.ctx-output, .ctx-swatch.ctx-output { background: #34d399; }
@@ -459,6 +461,42 @@
 
 .thinking-banner .thinking-detail { flex: 1; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .thinking-banner .thinking-count { font-family: var(--mono); font-size: 0.68rem; color: #fbbf24; font-variant-numeric: tabular-nums; }
+
+/* ── Tool Call ── */
+
+.tool-banner {
+  display: flex; align-items: center; gap: 8px; padding: 8px 14px;
+  font-size: 0.75rem; color: #f59e0b;
+  background: rgba(245, 158, 11, 0.06); border-bottom: 1px solid var(--border);
+}
+
+.tool-icon { font-size: 0.8rem; flex-shrink: 0; }
+.tool-icon.tool-running { animation: spin 1.5s linear infinite; }
+.tool-label { flex: 1; font-family: var(--mono); font-size: 0.72rem; }
+
+.tool-exec-badge {
+  font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.5px;
+  padding: 2px 6px; border-radius: 3px;
+  background: rgba(245, 158, 11, 0.15); color: #f59e0b;
+}
+
+.tool-log {
+  margin-bottom: 8px; padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.72rem;
+}
+
+.tool-log-entry {
+  display: flex; align-items: center; gap: 6px;
+  padding: 2px 0; color: var(--text);
+  font-family: var(--mono);
+}
+
+.tool-log-icon { color: #f59e0b; flex-shrink: 0; font-size: 0.7rem; }
+.tool-log-label { flex: 1; }
+.tool-log-tokens { color: var(--text); opacity: 0.5; font-size: 0.65rem; }
+.tool-log-final { color: var(--text-bright); }
+.tool-log-final .tool-log-icon { color: var(--text-bright); }
 
 /* ── Stream Content ── */
 

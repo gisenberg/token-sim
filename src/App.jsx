@@ -55,20 +55,16 @@ const EXPERIMENTS = [
   { id: '5090-best', category: 'platform', name: '5090 Best 6', desc: 'Top models on RTX 5090', columns: 3, models: ['5090-gemma26b-q6','5090-gemma31b','5090-qwen27b-opus','5090-gemma26b-q4','5090-harmonic27b','5090-qwopus27b'] },
   { id: 'm4-best', category: 'platform', name: 'M4 Max Best 6', desc: 'Top models on M4 Max — bandwidth-limited', columns: 3, models: ['m4-gemma31b','m4-gemma26b-q6','m4-qwen27b-mlx','m4-qwen27b-opus','m4-gemma26b-q4','m4-qwen9b'] },
   { id: 'spark-best', category: 'platform', name: 'Spark Best 6', desc: '128GB unlocks 100B+ models', columns: 3, models: ['spark-qwen122b-ik','spark-qwen122b-unsloth','spark-glm45','spark-qwen122b-reap','spark-qwen122b-mainline','spark-qwen3-coder'] },
-
   { id: 'gemma26b-q6-xplat', category: 'cross-platform', name: 'Gemma 26B Q6: 5090 vs M4', desc: 'Same MoE model — 2.1x speed gap maps to bandwidth', columns: 2, models: ['5090-gemma26b-q6','m4-gemma26b-q6'] },
   { id: 'gemma31b-3way', category: 'cross-platform', name: 'Gemma 31B: Three Platforms', desc: '50 vs 15 vs 7 tok/s — more memory != faster', columns: 3, models: ['5090-gemma31b','m4-gemma31b','spark-gemma31b-dense'] },
   { id: 'gemma26b-quant-xplat', category: 'cross-platform', name: 'Gemma 26B: Q6 vs Q4 x Platform', desc: 'Quantization impact varies by hardware', columns: 2, models: ['5090-gemma26b-q6','5090-gemma26b-q4','m4-gemma26b-q6','m4-gemma26b-q4'] },
-
   { id: 'moe-vs-dense-5090', category: 'architecture', name: 'MoE vs Dense on 5090', desc: 'MoE activates 3-4B params — 2-3x faster', columns: 2, models: ['5090-gemma26b-q6','5090-qwen35b-a3b','5090-gemma31b','5090-qwen27b-opus'] },
   { id: 'moe-scale', category: 'architecture', name: 'MoE Scale: 26B to 122B', desc: '3x active params + slower HW = double penalty', columns: 3, models: ['5090-gemma26b-q6','5090-qwen35b-a3b','spark-qwen122b-ik'] },
   { id: 'qwen122b-variants', category: 'architecture', name: 'Qwen 122B Variants', desc: 'REAP pruning saves 14GB and adds 3 tok/s', columns: 2, models: ['spark-qwen122b-ik','spark-qwen122b-unsloth','spark-qwen122b-reap','spark-qwen122b-mainline'] },
   { id: 'small-vs-big-m4', category: 'architecture', name: 'Small vs Big on M4', desc: '26B MoE matches 4B speed at 2x quality', columns: 2, models: ['m4-nemotron4b','m4-qwen9b','m4-gemma26b-q6','m4-gemma31b'] },
-
   { id: 's-tier-showdown', category: 'quality-speed', name: 'S-Tier Showdown', desc: 'Best of each platform — 7x speed range', columns: 3, models: ['5090-gemma26b-q6','5090-gemma31b','m4-gemma31b','m4-gemma26b-q6','spark-qwen122b-ik','spark-qwen122b-unsloth'] },
   { id: 'speed-vs-quality-5090', category: 'quality-speed', name: 'Speed vs Quality on 5090', desc: 'Gemma 26B is the sweet spot', columns: 2, models: ['5090-qwen35b-a3b','5090-gemma-e4b','5090-gemma26b-q6','5090-gemma31b'] },
   { id: 'f-tier', category: 'quality-speed', name: 'The F-Tier', desc: 'Speed without quality or quality without speed', columns: 3, models: ['5090-gemma-e4b','spark-gemma31b-dense','spark-mistral119b'] },
-
   { id: 'thinking-compared', category: 'thinking', name: 'Thinking Models Compared', desc: '16K thinking = 4.4 min before output', columns: 2, models: ['5090-harmonic27b','m4-nemotron4b','spark-nemotron120b','spark-minimax'] },
   { id: 'thinking-vs-not-5090', category: 'thinking', name: 'Thinking vs Direct on 5090', desc: 'Is reasoning worth 11x wall time?', columns: 3, models: ['5090-harmonic27b','5090-qwen27b-opus','5090-gemma26b-q6'] },
 ]
@@ -111,25 +107,15 @@ I also need to update the shutdown method to wait for in-flight connections:
 
 \`\`\`typescript
 async shutdown(timeoutMs = 5000): Promise<void> {
-  // Stop accepting new requests
   this.accepting = false;
-
-  // Wait for all active connections to be released
   const deadline = Date.now() + timeoutMs;
   while (this.inUse.size > 0 && Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 50));
   }
-
   if (this.inUse.size > 0) {
-    console.warn(
-      \`Forcing shutdown with \${this.inUse.size} active connections\`
-    );
+    console.warn(\`Forcing shutdown with \${this.inUse.size} active connections\`);
   }
-
-  // Close all connections
-  await Promise.allSettled(
-    this.connections.map((c) => c.close())
-  );
+  await Promise.allSettled(this.connections.map((c) => c.close()));
   this.connections = [];
   this.inUse.clear();
 }
@@ -140,76 +126,41 @@ And the test should verify concurrent access doesn't hand out the same connectio
 \`\`\`typescript
 test("concurrent acquire does not return same connection", async () => {
   const pool = new ConnectionPool({ maxSize: 2 });
-
-  // Acquire two connections simultaneously
-  const [a, b] = await Promise.all([
-    pool.acquire(),
-    pool.acquire(),
-  ]);
-
+  const [a, b] = await Promise.all([pool.acquire(), pool.acquire()]);
   expect(a.id).not.toBe(b.id);
   expect(pool.activeCount).toBe(2);
-
   pool.release(a);
   pool.release(b);
   expect(pool.activeCount).toBe(0);
 });
-
-test("shutdown waits for active connections", async () => {
-  const pool = new ConnectionPool({ maxSize: 3 });
-  const conn = await pool.acquire();
-
-  const shutdownPromise = pool.shutdown(1000);
-
-  // Release after a short delay
-  setTimeout(() => pool.release(conn), 100);
-
-  await shutdownPromise;
-  expect(pool.size).toBe(0);
-});
 \`\`\`
 
-The changes are backward-compatible — existing callers don't need to change. The \`inUse\` tracking adds negligible overhead since it's a Set lookup (O(1)).
+The changes are backward-compatible. The \`inUse\` tracking adds negligible overhead since it's a Set lookup (O(1)).
 `.trim()
 
 const tokenizeResponse = (text) => {
   const raw = text.split(/(?<=\s)|(?=\s)|(?<=[\`\{\}\(\)\[\];:,.<>+\-=!&|])|(?=[\`\{\}\(\)\[\];:,.<>+\-=!&|])/)
   return raw.filter(t => t.length > 0)
 }
-
 const RESPONSE_TOKENS = tokenizeResponse(CODE_RESPONSE)
 
 const generateText = (tokenCount) => {
   const tokens = []
-  for (let i = 0; i < tokenCount; i++) {
-    tokens.push(RESPONSE_TOKENS[i % RESPONSE_TOKENS.length])
-  }
+  for (let i = 0; i < tokenCount; i++) tokens.push(RESPONSE_TOKENS[i % RESPONSE_TOKENS.length])
   return tokens
 }
 
 // ── Markdown Renderer ──
 const escapeHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-
 const renderMarkdown = (text) => {
   const lines = text.split('\n')
-  let html = ''
-  let inCode = false
-  let lang = ''
-
+  let html = '', inCode = false, lang = ''
   for (const line of lines) {
     if (line.startsWith('```')) {
-      if (inCode) {
-        html += '</code></pre>'
-        inCode = false
-        lang = ''
-      } else {
-        lang = line.slice(3).trim()
-        html += '<pre class="md-pre"><code>'
-        inCode = true
-      }
+      if (inCode) { html += '</code></pre>'; inCode = false; lang = '' }
+      else { lang = line.slice(3).trim(); html += '<pre class="md-pre"><code>'; inCode = true }
       continue
     }
-
     if (inCode) {
       const esc = escapeHtml(line)
       if (lang === 'diff') {
@@ -217,9 +168,7 @@ const renderMarkdown = (text) => {
         else if (line.startsWith('-')) html += `<span class="md-del">${esc}</span>\n`
         else if (line.startsWith('@@')) html += `<span class="md-hunk">${esc}</span>\n`
         else html += esc + '\n'
-      } else {
-        html += esc + '\n'
-      }
+      } else html += esc + '\n'
     } else {
       if (line.trim() === '') { html += '<br/>'; continue }
       let p = escapeHtml(line)
@@ -232,10 +181,9 @@ const renderMarkdown = (text) => {
   return html
 }
 
-// System prompt + tool schemas overhead (estimated ~12K for a typical coding agent)
+// ── Constants ──
 const SYSTEM_TOKENS = 12000
 
-// ── Presets ──
 const PROMPT_PRESETS = [
   { label: 'Quick question', tokens: 500, desc: 'Short prompt, no context' },
   { label: 'Single file edit', tokens: 2000, desc: '~1 file + instructions' },
@@ -254,31 +202,59 @@ const OUTPUT_PRESETS = [
   { label: 'Max output', tokens: 16000, desc: 'Pushing output limits' },
 ]
 
-const TIER_COLORS = { S: '#fbbf24', A: '#34d399', B: '#60a5fa', C: '#a78bfa', D: '#f87171', F: '#6b7280' }
+const TOOL_PRESETS = [
+  { label: 'No tool calls', steps: [], desc: 'Single inference, no agent loop' },
+  { label: 'Light agent (3)', steps: [
+    { label: 'Read src/db/pool.ts', decodeTokens: 50, execMs: 200, resultTokens: 800 },
+    { label: 'Grep "acquire" in src/', decodeTokens: 40, execMs: 300, resultTokens: 400 },
+    { label: 'Edit src/db/pool.ts', decodeTokens: 80, execMs: 100, resultTokens: 200 },
+  ], desc: 'Read, search, edit' },
+  { label: 'Standard agent (6)', steps: [
+    { label: 'Read src/db/pool.ts', decodeTokens: 50, execMs: 200, resultTokens: 800 },
+    { label: 'Read src/db/types.ts', decodeTokens: 40, execMs: 200, resultTokens: 600 },
+    { label: 'Grep "Connection" in src/', decodeTokens: 45, execMs: 300, resultTokens: 500 },
+    { label: 'Edit src/db/pool.ts', decodeTokens: 80, execMs: 100, resultTokens: 200 },
+    { label: 'Run npm test', decodeTokens: 30, execMs: 3000, resultTokens: 1200 },
+    { label: 'Edit src/db/pool.test.ts', decodeTokens: 90, execMs: 100, resultTokens: 300 },
+  ], desc: 'Read, search, edit, test, fix' },
+  { label: 'Deep exploration (10)', steps: [
+    { label: 'Glob src/**/*.ts', decodeTokens: 30, execMs: 100, resultTokens: 300 },
+    { label: 'Read src/db/pool.ts', decodeTokens: 50, execMs: 200, resultTokens: 800 },
+    { label: 'Read src/db/types.ts', decodeTokens: 40, execMs: 200, resultTokens: 600 },
+    { label: 'Read src/db/migrations.ts', decodeTokens: 45, execMs: 200, resultTokens: 900 },
+    { label: 'Grep "acquire" in src/', decodeTokens: 40, execMs: 300, resultTokens: 500 },
+    { label: 'Read src/server/handler.ts', decodeTokens: 50, execMs: 200, resultTokens: 700 },
+    { label: 'Edit src/db/pool.ts', decodeTokens: 80, execMs: 100, resultTokens: 200 },
+    { label: 'Edit src/db/pool.test.ts', decodeTokens: 90, execMs: 100, resultTokens: 300 },
+    { label: 'Run npm test', decodeTokens: 30, execMs: 3000, resultTokens: 1200 },
+    { label: 'Read test output', decodeTokens: 30, execMs: 100, resultTokens: 400 },
+  ], desc: 'Full codebase exploration, multi-file edit, test' },
+]
 
-const formatTime = (seconds) => {
-  if (seconds < 1) return `${Math.round(seconds * 1000)}ms`
-  if (seconds < 10) return `${seconds.toFixed(1)}s`
-  return `${Math.round(seconds)}s`
-}
+const TIER_COLORS = { S: '#fbbf24', A: '#34d399', B: '#60a5fa', C: '#a78bfa', D: '#f87171', F: '#6b7280' }
+const formatTime = (s) => s < 1 ? `${Math.round(s * 1000)}ms` : s < 10 ? `${s.toFixed(1)}s` : `${Math.round(s)}s`
 
 // ── TokenStream Component ──
-const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptTokens, onComplete, streamIndex }) => {
+const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptTokens, toolSteps, onComplete, streamIndex }) => {
   const [displayedTokens, setDisplayedTokens] = useState([])
   const [phase, setPhase] = useState('idle')
   const [thinkingTokensGenerated, setThinkingTokensGenerated] = useState(0)
   const [elapsedTime, setElapsedTime] = useState(0)
   const [prefillElapsed, setPrefillElapsed] = useState(0)
   const [compactElapsed, setCompactElapsed] = useState(0)
+  const [toolResultTokens, setToolResultTokens] = useState(0)
+  const [currentToolIdx, setCurrentToolIdx] = useState(-1)
+  const [toolLog, setToolLog] = useState([])
   const intervalRef = useRef(null)
   const timerRef = useRef(null)
-  const prefillTimerRef = useRef(null)
+  const timeoutRef = useRef(null)
   const startTimeRef = useRef(null)
   const decodeStartRef = useRef(null)
   const totalIndexRef = useRef(0)
   const contentRef = useRef(null)
   const rafRef = useRef(null)
   const hasStartedRef = useRef(false)
+  const toolResultsRef = useRef(0)
 
   const thinkingBudget = model.thinkingBudget
   const totalTokens = thinkingBudget + tokenCount
@@ -290,31 +266,23 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
     })
   }, [])
 
-  useEffect(() => {
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current)
-      if (timerRef.current) clearInterval(timerRef.current)
-      if (prefillTimerRef.current) clearTimeout(prefillTimerRef.current)
-      if (rafRef.current) cancelAnimationFrame(rafRef.current)
-    }
+  const clearTimers = useCallback(() => {
+    if (intervalRef.current) clearInterval(intervalRef.current)
+    if (timerRef.current) clearInterval(timerRef.current)
+    if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    if (rafRef.current) cancelAnimationFrame(rafRef.current)
   }, [])
+
+  useEffect(() => () => clearTimers(), [clearTimers])
 
   useEffect(() => {
     if (isReset) {
-      if (intervalRef.current) clearInterval(intervalRef.current)
-      if (timerRef.current) clearInterval(timerRef.current)
-      if (prefillTimerRef.current) clearTimeout(prefillTimerRef.current)
-      if (rafRef.current) cancelAnimationFrame(rafRef.current)
-      setDisplayedTokens([])
-      setPhase('idle')
-      setThinkingTokensGenerated(0)
-      setElapsedTime(0)
-      setPrefillElapsed(0)
-      setCompactElapsed(0)
-      totalIndexRef.current = 0
-      hasStartedRef.current = false
-      startTimeRef.current = null
-      decodeStartRef.current = null
+      clearTimers()
+      setDisplayedTokens([]); setPhase('idle'); setThinkingTokensGenerated(0)
+      setElapsedTime(0); setPrefillElapsed(0); setCompactElapsed(0)
+      setToolResultTokens(0); setCurrentToolIdx(-1); setToolLog([])
+      totalIndexRef.current = 0; hasStartedRef.current = false
+      startTimeRef.current = null; decodeStartRef.current = null; toolResultsRef.current = 0
       return
     }
 
@@ -326,65 +294,104 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         if (startTimeRef.current) setElapsedTime(((Date.now() - startTimeRef.current) / 1000).toFixed(1))
       }, 100)
 
-      const maxCtxTokens = parseInt(model.maxCtx) * 1000
-      const usedTokens = SYSTEM_TOKENS + promptTokens + thinkingBudget + tokenCount
-      const usageRatio = usedTokens / maxCtxTokens
-      const needsCompact = usageRatio > 0.8
-      const compactTokens = needsCompact ? Math.max(0, usedTokens - maxCtxTokens * 0.6) : 0
+      const maxCtx = parseInt(model.maxCtx) * 1000
+      const totalToolResult = toolSteps.reduce((s, t) => s + t.resultTokens + t.decodeTokens, 0)
+      const fullUsed = SYSTEM_TOKENS + promptTokens + totalToolResult + thinkingBudget + tokenCount
+      const needsCompact = fullUsed / maxCtx > 0.8
+      const compactTokens = needsCompact ? Math.max(0, fullUsed - maxCtx * 0.6) : 0
       const compactMs = needsCompact ? (compactTokens / (model.prefillRate * 0.5)) * 1000 : 0
 
-      const startPrefill = () => {
-        setPhase('prefill')
-        const prefillMs = (promptTokens / model.prefillRate) * 1000
-        const prefillStart = Date.now()
-        const animatePrefill = () => {
-          const elapsed = Date.now() - prefillStart
-          const progress = Math.min(elapsed / prefillMs, 1)
-          setPrefillElapsed(progress)
-          if (progress < 1) prefillTimerRef.current = setTimeout(animatePrefill, 16)
+      // Animate a progress bar over durationMs, then call next()
+      const animateBar = (setter, durationMs, next) => {
+        const start = Date.now()
+        const tick = () => {
+          const p = Math.min((Date.now() - start) / durationMs, 1)
+          setter(p)
+          if (p < 1) timeoutRef.current = setTimeout(tick, 16)
+          else next()
         }
-        animatePrefill()
+        tick()
+      }
 
-        prefillTimerRef.current = setTimeout(() => {
-          decodeStartRef.current = Date.now()
-          setPhase(thinkingBudget > 0 ? 'thinking' : 'streaming')
-
-          const interval = 1000 / model.tokPerSec
-          intervalRef.current = setInterval(() => {
-            if (totalIndexRef.current < totalTokens) {
-              if (totalIndexRef.current < thinkingBudget) {
-                setThinkingTokensGenerated(totalIndexRef.current + 1)
-                totalIndexRef.current++
-              } else {
-                if (totalIndexRef.current === thinkingBudget && thinkingBudget > 0) setPhase('streaming')
-                const di = totalIndexRef.current - thinkingBudget
-                if (di < tokenCount) setDisplayedTokens(prev => [...prev, tokens[di]])
-                totalIndexRef.current++
-              }
+      // Run the final output decode
+      const startFinalDecode = () => {
+        decodeStartRef.current = Date.now()
+        setPhase(thinkingBudget > 0 ? 'thinking' : 'streaming')
+        const interval = 1000 / model.tokPerSec
+        intervalRef.current = setInterval(() => {
+          if (totalIndexRef.current < totalTokens) {
+            if (totalIndexRef.current < thinkingBudget) {
+              setThinkingTokensGenerated(totalIndexRef.current + 1)
+              totalIndexRef.current++
             } else {
-              clearInterval(intervalRef.current)
-              clearInterval(timerRef.current)
-              if (startTimeRef.current) setElapsedTime(((Date.now() - startTimeRef.current) / 1000).toFixed(1))
-              setPhase('complete')
-              onComplete(streamIndex)
+              if (totalIndexRef.current === thinkingBudget && thinkingBudget > 0) setPhase('streaming')
+              const di = totalIndexRef.current - thinkingBudget
+              if (di < tokenCount) setDisplayedTokens(prev => [...prev, tokens[di]])
+              totalIndexRef.current++
             }
-          }, interval)
-        }, prefillMs)
+          } else {
+            clearInterval(intervalRef.current); clearInterval(timerRef.current)
+            if (startTimeRef.current) setElapsedTime(((Date.now() - startTimeRef.current) / 1000).toFixed(1))
+            setPhase('complete'); onComplete(streamIndex)
+          }
+        }, interval)
+      }
+
+      // Prefill then start decode
+      const startPrefill = (contextSize, next) => {
+        setPhase('prefill')
+        setPrefillElapsed(0)
+        const prefillMs = (contextSize / model.prefillRate) * 1000
+        animateBar(setPrefillElapsed, prefillMs, next)
+      }
+
+      // Run tool step i, then continue
+      const runToolStep = (i) => {
+        if (i >= toolSteps.length) {
+          // All tool calls done — final prefill + decode
+          const finalCtx = SYSTEM_TOKENS + promptTokens + toolResultsRef.current
+          startPrefill(finalCtx, startFinalDecode)
+          return
+        }
+
+        const step = toolSteps[i]
+        setCurrentToolIdx(i)
+        const currentCtx = SYSTEM_TOKENS + promptTokens + toolResultsRef.current
+
+        // Prefill current context
+        startPrefill(currentCtx, () => {
+          // Decode the tool call (short)
+          setPhase('tool-decode')
+          const decodeMs = (step.decodeTokens / model.tokPerSec) * 1000
+          timeoutRef.current = setTimeout(() => {
+            // Tool execution
+            setPhase('tool-exec')
+            setToolLog(prev => [...prev, { label: step.label, tokens: step.resultTokens }])
+            timeoutRef.current = setTimeout(() => {
+              // Add result to context
+              toolResultsRef.current += step.resultTokens + step.decodeTokens
+              setToolResultTokens(toolResultsRef.current)
+              // Next step
+              runToolStep(i + 1)
+            }, step.execMs)
+          }, decodeMs)
+        })
+      }
+
+      const beginToolLoop = () => {
+        if (toolSteps.length === 0) {
+          const ctx = SYSTEM_TOKENS + promptTokens
+          startPrefill(ctx, startFinalDecode)
+        } else {
+          runToolStep(0)
+        }
       }
 
       if (needsCompact) {
         setPhase('compacting')
-        const compactStart = Date.now()
-        const animateCompact = () => {
-          const elapsed = Date.now() - compactStart
-          const progress = Math.min(elapsed / compactMs, 1)
-          setCompactElapsed(progress)
-          if (progress < 1) prefillTimerRef.current = setTimeout(animateCompact, 16)
-        }
-        animateCompact()
-        prefillTimerRef.current = setTimeout(startPrefill, compactMs)
+        animateBar(setCompactElapsed, compactMs, beginToolLoop)
       } else {
-        startPrefill()
+        beginToolLoop()
       }
     }
 
@@ -392,31 +399,35 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       if (intervalRef.current) clearInterval(intervalRef.current)
       if (timerRef.current) clearInterval(timerRef.current)
     }
-  }, [isRunning, isReset, model.tokPerSec, model.prefillRate, model.maxCtx, promptTokens, thinkingBudget, tokenCount, totalTokens, tokens, onComplete, streamIndex])
+  }, [isRunning, isReset, model, promptTokens, thinkingBudget, tokenCount, totalTokens, tokens, toolSteps, onComplete, streamIndex, clearTimers])
 
   useEffect(() => {
-    if (displayedTokens.length > 0) scrollToBottom()
-  }, [displayedTokens, scrollToBottom])
+    if (displayedTokens.length > 0 || toolLog.length > 0) scrollToBottom()
+  }, [displayedTokens, toolLog, scrollToBottom])
 
   const totalProgress = totalTokens > 0 ? ((thinkingTokensGenerated + displayedTokens.length) / totalTokens) * 100 : 0
   const decodeElapsed = decodeStartRef.current ? (Date.now() - decodeStartRef.current) / 1000 : 0
   const rate = displayedTokens.length > 0 && decodeElapsed > 0 ? (displayedTokens.length / decodeElapsed).toFixed(1) : null
 
-  const statusLabel = { idle: 'Ready', compacting: 'Compacting', prefill: 'Prefill', thinking: 'Thinking', streaming: 'Streaming', complete: 'Done' }[phase]
-  const cardClass = ['stream-card', (phase !== 'idle' && phase !== 'complete') && 'is-running', phase === 'complete' && 'is-complete'].filter(Boolean).join(' ')
+  const phaseLabels = { idle: 'Ready', compacting: 'Compacting', prefill: 'Prefill', 'tool-decode': 'Tool Call', 'tool-exec': 'Executing', thinking: 'Thinking', streaming: 'Streaming', complete: 'Done' }
+  const statusLabel = phaseLabels[phase]
+  const isActive = phase !== 'idle' && phase !== 'complete'
+  const cardClass = ['stream-card', isActive && 'is-running', phase === 'complete' && 'is-complete'].filter(Boolean).join(' ')
   const thinkingLabel = model.thinking ? `${model.thinkingBudget.toLocaleString()}` : 'Off'
 
-  // Context window
+  // Context bar — dynamic based on accumulated tool results
   const maxCtxTokens = parseInt(model.maxCtx) * 1000
-  const usedTokens = SYSTEM_TOKENS + promptTokens + thinkingBudget + tokenCount
+  const usedTokens = SYSTEM_TOKENS + promptTokens + toolResultTokens + thinkingBudget + tokenCount
   const overflows = usedTokens > maxCtxTokens
-  const systemPct = Math.min((SYSTEM_TOKENS / maxCtxTokens) * 100, 100)
-  const promptPct = Math.min((promptTokens / maxCtxTokens) * 100, 100 - systemPct)
-  const thinkingPct = Math.min((thinkingBudget / maxCtxTokens) * 100, Math.max(0, 100 - systemPct - promptPct))
-  const outputPct = Math.min((tokenCount / maxCtxTokens) * 100, Math.max(0, 100 - systemPct - promptPct - thinkingPct))
+  const pct = (n) => Math.min((n / maxCtxTokens) * 100, 100)
+  const systemPct = pct(SYSTEM_TOKENS)
+  const promptPct = Math.min(pct(promptTokens), 100 - systemPct)
+  const toolPct = Math.min(pct(toolResultTokens), Math.max(0, 100 - systemPct - promptPct))
+  const thinkPct = Math.min(pct(thinkingBudget), Math.max(0, 100 - systemPct - promptPct - toolPct))
+  const outPct = Math.min(pct(tokenCount), Math.max(0, 100 - systemPct - promptPct - toolPct - thinkPct))
 
-  // Markdown
   const markdownHtml = displayedTokens.length > 0 ? renderMarkdown(displayedTokens.join('')) : ''
+  const currentStep = currentToolIdx >= 0 && currentToolIdx < toolSteps.length ? toolSteps[currentToolIdx] : null
 
   return (
     <div className={cardClass}>
@@ -440,6 +451,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         <span className="hw-badge" style={{ color: model.hwColor }}>{model.hardware}</span>
         <span className="hw-spec">{model.tokPerSec} tok/s</span>
         <span className="hw-spec">{model.prefillRate} pp/s</span>
+        <span className="hw-spec">{model.vram}</span>
         <span className="hw-spec">{model.maxCtx} ctx</span>
         <span className="hw-spec">{model.quality} pass</span>
       </div>
@@ -449,18 +461,19 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
           <span>Context: {usedTokens.toLocaleString()} / {maxCtxTokens.toLocaleString()}{overflows ? ' — overflow!' : ''}</span>
         </div>
         <div className={`ctx-bar ${overflows ? 'ctx-overflow' : ''}`}>
-          <span className="ctx-bar-tick" />
-          <span className="ctx-bar-tick-label">compact</span>
+          <span className="ctx-bar-tick" /><span className="ctx-bar-tick-label">compact</span>
           <div className="ctx-bar-fill-area">
             <div className="ctx-seg ctx-system" style={{ width: `${systemPct}%` }} />
             <div className="ctx-seg ctx-prompt" style={{ width: `${promptPct}%` }} />
-            {thinkingBudget > 0 && <div className="ctx-seg ctx-thinking" style={{ width: `${thinkingPct}%` }} />}
-            <div className="ctx-seg ctx-output" style={{ width: `${outputPct}%` }} />
+            {toolResultTokens > 0 && <div className="ctx-seg ctx-tool" style={{ width: `${toolPct}%` }} />}
+            {thinkingBudget > 0 && <div className="ctx-seg ctx-thinking" style={{ width: `${thinkPct}%` }} />}
+            <div className="ctx-seg ctx-output" style={{ width: `${outPct}%` }} />
           </div>
         </div>
         <div className="ctx-bar-legend">
           <span className="ctx-legend-item"><span className="ctx-swatch ctx-system" />System</span>
           <span className="ctx-legend-item"><span className="ctx-swatch ctx-prompt" />Prompt</span>
+          {(toolSteps.length > 0 || toolResultTokens > 0) && <span className="ctx-legend-item"><span className="ctx-swatch ctx-tool" />Tools</span>}
           {thinkingBudget > 0 && <span className="ctx-legend-item"><span className="ctx-swatch ctx-thinking" />Thinking</span>}
           <span className="ctx-legend-item"><span className="ctx-swatch ctx-output" />Output</span>
           <span className="ctx-legend-item ctx-free">{Math.max(0, maxCtxTokens - usedTokens).toLocaleString()} free</span>
@@ -469,6 +482,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
 
       <div className="stats-row">
         <div className="stat"><span className="stat-label">Output</span><span className="stat-value">{displayedTokens.length.toLocaleString()} / {tokenCount.toLocaleString()}</span></div>
+        {toolSteps.length > 0 && <div className="stat"><span className="stat-label">Tool calls</span><span className="stat-value">{Math.min(toolLog.length, toolSteps.length)} / {toolSteps.length}</span></div>}
         <div className="stat"><span className="stat-label">Thinking</span><span className={`stat-value ${!model.thinking ? 'stat-dim' : ''}`}>{thinkingLabel}</span></div>
         <div className="stat"><span className="stat-label">Time</span><span className="stat-value">{elapsedTime}s</span></div>
         {rate && <div className="stat"><span className="stat-label">Actual</span><span className="stat-value">{rate} tok/s</span></div>}
@@ -477,11 +491,19 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       <div className="progress-track"><div className="progress-fill" style={{ width: `${totalProgress}%`, background: model.color }} /></div>
 
       {phase === 'compacting' && (
-        <div className="compact-banner"><span className="compact-spinner" /><div className="compact-detail"><span>Compacting context — summarizing prior turns</span><div className="compact-bar"><div className="compact-bar-fill" style={{ width: `${compactElapsed * 100}%` }} /></div></div></div>
+        <div className="compact-banner"><span className="compact-spinner" /><div className="compact-detail"><span>Compacting context</span><div className="compact-bar"><div className="compact-bar-fill" style={{ width: `${compactElapsed * 100}%` }} /></div></div></div>
       )}
 
       {phase === 'prefill' && (
-        <div className="prefill-banner"><div className="prefill-bar"><div className="prefill-bar-fill" style={{ width: `${prefillElapsed * 100}%`, background: model.color }} /></div><span className="prefill-label">Prefilling {promptTokens.toLocaleString()} tokens @ {model.prefillRate} tok/s — {formatTime(promptTokens / model.prefillRate)}</span></div>
+        <div className="prefill-banner"><div className="prefill-bar"><div className="prefill-bar-fill" style={{ width: `${prefillElapsed * 100}%`, background: model.color }} /></div><span className="prefill-label">Prefilling {(SYSTEM_TOKENS + promptTokens + toolResultTokens).toLocaleString()} tokens @ {model.prefillRate} tok/s</span></div>
+      )}
+
+      {(phase === 'tool-decode' || phase === 'tool-exec') && currentStep && (
+        <div className="tool-banner">
+          <span className={`tool-icon ${phase === 'tool-exec' ? 'tool-running' : ''}`}>{phase === 'tool-exec' ? '⚙' : '→'}</span>
+          <span className="tool-label">{currentStep.label}</span>
+          {phase === 'tool-exec' && <span className="tool-exec-badge">executing</span>}
+        </div>
       )}
 
       {phase === 'thinking' && (
@@ -489,10 +511,23 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       )}
 
       <div ref={contentRef} className="stream-content">
-        {displayedTokens.length === 0 && phase === 'idle' && <div className="stream-empty">Waiting to start</div>}
-        {displayedTokens.length === 0 && phase === 'prefill' && <div className="stream-empty">Processing prompt...</div>}
-        {displayedTokens.length === 0 && phase === 'compacting' && <div className="stream-empty">Compacting...</div>}
-        {displayedTokens.length === 0 && phase === 'thinking' && <div className="stream-empty">Reasoning...</div>}
+        {displayedTokens.length === 0 && toolLog.length === 0 && phase === 'idle' && <div className="stream-empty">Waiting to start</div>}
+        {displayedTokens.length === 0 && toolLog.length === 0 && (phase === 'prefill' || phase === 'compacting') && <div className="stream-empty">Processing...</div>}
+        {displayedTokens.length === 0 && toolLog.length === 0 && phase === 'thinking' && <div className="stream-empty">Reasoning...</div>}
+        {toolLog.length > 0 && (
+          <div className="tool-log">
+            {toolLog.map((entry, i) => (
+              <div key={i} className="tool-log-entry">
+                <span className="tool-log-icon">→</span>
+                <span className="tool-log-label">{entry.label}</span>
+                <span className="tool-log-tokens">+{entry.tokens.toLocaleString()} tok</span>
+              </div>
+            ))}
+            {phase !== 'complete' && displayedTokens.length === 0 && currentToolIdx >= toolLog.length && (
+              <div className="tool-log-entry tool-log-final"><span className="tool-log-icon">←</span><span className="tool-log-label">Generating response...</span></div>
+            )}
+          </div>
+        )}
         {markdownHtml && <div className="md-content" dangerouslySetInnerHTML={{ __html: markdownHtml }} />}
         {phase === 'streaming' && <span className="cursor" />}
       </div>
@@ -507,23 +542,17 @@ function App() {
   const [isReset, setIsReset] = useState(false)
   const [tokenCount, setTokenCount] = useState(4000)
   const [promptTokens, setPromptTokens] = useState(24000)
+  const [toolPresetIdx, setToolPresetIdx] = useState(2)
   const [completedStreams, setCompletedStreams] = useState(new Set())
 
   const experiment = EXPERIMENTS.find(e => e.id === activeExperiment)
   const selectedModels = experiment.models.map(id => MODELS.find(m => m.id === id))
   const maxThinkingBudget = Math.max(...selectedModels.map(m => m.thinkingBudget))
   const maxTotalTokens = tokenCount + maxThinkingBudget
+  const toolSteps = TOOL_PRESETS[toolPresetIdx].steps
 
-  const handleExperimentChange = (id) => {
-    if (isRunning) return
-    setActiveExperiment(id)
-    setCompletedStreams(new Set())
-  }
-
-  const handleComplete = useCallback((index) => {
-    setCompletedStreams(prev => { const next = new Set(prev); next.add(index); return next })
-  }, [])
-
+  const handleExperimentChange = (id) => { if (!isRunning) { setActiveExperiment(id); setCompletedStreams(new Set()) } }
+  const handleComplete = useCallback((index) => { setCompletedStreams(prev => { const next = new Set(prev); next.add(index); return next }) }, [])
   const handleStart = () => { setIsReset(false); setCompletedStreams(new Set()); setIsRunning(true) }
   const handleReset = () => { setIsRunning(false); setIsReset(true); setCompletedStreams(new Set()); setTimeout(() => setIsReset(false), 100) }
 
@@ -531,12 +560,9 @@ function App() {
   const allComplete = completedStreams.size >= experiment.models.length
   const controlsDisabled = isRunning && !allComplete
 
-  // Chunk models into rows
   const cols = experiment.columns
   const rows = []
-  for (let i = 0; i < selectedModels.length; i += cols) {
-    rows.push({ start: i, models: selectedModels.slice(i, i + cols) })
-  }
+  for (let i = 0; i < selectedModels.length; i += cols) rows.push({ start: i, models: selectedModels.slice(i, i + cols) })
 
   return (
     <div className="app-layout">
@@ -546,12 +572,7 @@ function App() {
           <div key={cat.id} className="nav-category">
             <div className="nav-cat-label">{cat.label}</div>
             {EXPERIMENTS.filter(e => e.category === cat.id).map(exp => (
-              <button
-                key={exp.id}
-                className={`nav-item ${activeExperiment === exp.id ? 'active' : ''}`}
-                onClick={() => handleExperimentChange(exp.id)}
-                disabled={controlsDisabled}
-              >
+              <button key={exp.id} className={`nav-item ${activeExperiment === exp.id ? 'active' : ''}`} onClick={() => handleExperimentChange(exp.id)} disabled={controlsDisabled}>
                 <span className="nav-item-name">{exp.name}</span>
                 <span className="nav-item-count">{exp.models.length}</span>
               </button>
@@ -584,6 +605,13 @@ function App() {
             </select>
             <div className="prompt-desc">{PROMPT_PRESETS.find(p => p.tokens === promptTokens)?.desc}</div>
           </div>
+          <div className="control-group">
+            <label>Agent tool calls<span>{toolSteps.length}</span></label>
+            <select value={toolPresetIdx} onChange={(e) => setToolPresetIdx(parseInt(e.target.value))} disabled={controlsDisabled} className="prompt-select">
+              {TOOL_PRESETS.map((p, i) => <option key={i} value={i}>{p.label}</option>)}
+            </select>
+            <div className="prompt-desc">{TOOL_PRESETS[toolPresetIdx].desc}</div>
+          </div>
           <div className="button-group">
             <button onClick={handleStart} disabled={controlsDisabled} className="btn-start">{controlsDisabled ? 'Running...' : 'Start'}</button>
             <button onClick={handleReset} className="btn-reset">Stop</button>
@@ -601,6 +629,7 @@ function App() {
                 isReset={isReset}
                 tokenCount={tokenCount}
                 promptTokens={promptTokens}
+                toolSteps={toolSteps}
                 onComplete={handleComplete}
                 streamIndex={start + i}
               />
