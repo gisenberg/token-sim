@@ -919,6 +919,7 @@ function App() {
   const [loopEnabled, setLoopEnabled] = useState(false)
   const [completedStreams, setCompletedStreams] = useState(new Set())
   const [cumulatives, setCumulatives] = useState({})
+  const [accumulatedContext, setAccumulatedContext] = useState(0) // carries forward across loops
 
   useEffect(() => {
     const onHash = () => setRoute(getHashRoute())
@@ -937,27 +938,33 @@ function App() {
   const toolSteps = useMemo(() => flattenSteps(TOOL_PRESETS[toolPresetIdx].steps), [toolPresetIdx])
 
   const handleExperimentChange = (id) => {
-    setIsRunning(false); setIsReset(true); setCompletedStreams(new Set()); setCumulatives({})
+    setIsRunning(false); setIsReset(true); setCompletedStreams(new Set()); setCumulatives({}); setAccumulatedContext(0)
     navigate(id)
     setTimeout(() => setIsReset(false), 100)
   }
   const handleComplete = useCallback((index) => {
     setCompletedStreams(prev => { const next = new Set(prev); next.add(index); return next })
   }, [])
-  const handleStart = () => { setIsReset(false); setCompletedStreams(new Set()); setIsRunning(true) }
-  const handleReset = () => { setIsRunning(false); setIsReset(true); setCompletedStreams(new Set()); setCumulatives({}); setTimeout(() => setIsReset(false), 100) }
+  const handleStart = () => { setIsReset(false); setCompletedStreams(new Set()); setAccumulatedContext(0); setIsRunning(true) }
+  const handleReset = () => { setIsRunning(false); setIsReset(true); setCompletedStreams(new Set()); setCumulatives({}); setAccumulatedContext(0); setTimeout(() => setIsReset(false), 100) }
 
   const tokens = useMemo(() => generateText(maxTotalTokens), [maxTotalTokens])
   const allComplete = completedStreams.size >= experiment.models.length
   const controlsDisabled = isRunning && !allComplete
 
-  // Loop: when all complete, accumulate tallies and restart
+  // Loop: when all complete, accumulate context from this turn, apply compaction, restart
   useEffect(() => {
     if (allComplete && loopEnabled && isRunning) {
+      // Tokens generated this turn that become part of next turn's context
+      const toolResultTotal = toolSteps.reduce((s, t) => s + (t.resultTokens || 0) + (t.decodeTokens || 0) + (t.thinkTokens || 0), 0)
+      // Use the max output across models for context growth (conservative)
+      const maxOutput = Math.max(...selectedModels.map(m => Math.round(tokenCount * (m.outputMul || 1)) + (m.thinkingBudget || 0)))
+      const turnTokens = maxOutput + toolResultTotal
+
       setCumulatives(prev => {
         const next = { ...prev }
         selectedModels.forEach((m, i) => {
-          const inputTok = SYSTEM_TOKENS + promptTokens + toolSteps.reduce((s, t) => s + (t.resultTokens || 0) + (t.decodeTokens || 0) + (t.thinkTokens || 0), 0)
+          const inputTok = SYSTEM_TOKENS + promptTokens + accumulatedContext + toolResultTotal
           const outputTok = Math.round(tokenCount * (m.outputMul || 1)) + (m.thinkingBudget || 0)
           const key = m.id + '-' + i
           if (!next[key]) next[key] = { loops: 0, input: 0, output: 0 }
@@ -967,13 +974,27 @@ function App() {
         })
         return next
       })
+
+      // Accumulate context: previous turns + this turn's output + tool results
+      // Check if compaction would trigger on next turn
+      const maxCtxAll = Math.max(...selectedModels.map(m => parseInt(m.maxCtx) * 1000))
+      const nextContext = SYSTEM_TOKENS + promptTokens + accumulatedContext + turnTokens
+      const wouldCompact = nextContext / maxCtxAll > 0.8
+
+      setAccumulatedContext(prev => {
+        const newCtx = prev + turnTokens
+        // Compaction reduces accumulated history by 70-90% (keep 10-30%)
+        if (wouldCompact) return Math.round(newCtx * 0.2)
+        return newCtx
+      })
+
       const timer = setTimeout(() => {
         setIsReset(true)
         setTimeout(() => { setIsReset(false); setCompletedStreams(new Set()); setIsRunning(true) }, 150)
       }, 500)
       return () => clearTimeout(timer)
     }
-  }, [allComplete, loopEnabled, isRunning, selectedModels, promptTokens, tokenCount, toolSteps])
+  }, [allComplete, loopEnabled, isRunning, selectedModels, promptTokens, tokenCount, toolSteps, accumulatedContext])
 
   const cols = experiment.columns
   const rows = []
@@ -1057,7 +1078,7 @@ function App() {
                     isRunning={isRunning}
                     isReset={isReset}
                     tokenCount={tokenCount}
-                    promptTokens={promptTokens}
+                    promptTokens={promptTokens + accumulatedContext}
                     toolSteps={toolSteps}
                     timeScale={timeScale}
                     cumulative={cumulatives[model.id + '-' + (start + i)]}
