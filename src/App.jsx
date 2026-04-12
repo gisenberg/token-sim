@@ -455,6 +455,8 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
   const decodeStartRef = useRef(null)
   const streamAccCtxRef = useRef(0)
   const cumulativeCostRef = useRef(0)
+  const runCostRef = useRef(0)
+  const totalSimTimeRef = useRef(0)
   const totalIndexRef = useRef(0)
   const contentRef = useRef(null)
   const rafRef = useRef(null)
@@ -490,6 +492,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
     setToolResultTokens(0); setCurrentToolIdx(-1); setToolLog([])
     totalIndexRef.current = 0; hasStartedRef.current = false
     startTimeRef.current = null; decodeStartRef.current = null; toolResultsRef.current = 0
+    runCostRef.current = 0
   }, [clearTimers])
 
   useEffect(() => {
@@ -500,7 +503,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       setElapsedTime(0); setPrefillElapsed(0); setCompactElapsed(0); setPrefillSize(0)
       setToolResultTokens(0); setCurrentToolIdx(-1); setToolLog([])
       setLoopCount(0); setCumulativeIn(0); setCumulativeOut(0); setCumulativeCost(0); setGeneration(0)
-      streamAccCtxRef.current = 0; cumulativeCostRef.current = 0
+      streamAccCtxRef.current = 0; cumulativeCostRef.current = 0; runCostRef.current = 0; totalSimTimeRef.current = 0
       totalIndexRef.current = 0; hasStartedRef.current = false
       startTimeRef.current = null; decodeStartRef.current = null; toolResultsRef.current = 0
       return
@@ -511,21 +514,23 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       startTimeRef.current = Date.now()
 
       // Elapsed time shows simulated time (real time * timeScale)
-      // Also reports cost ticks for the chart
-      const costTickStart = Date.now()
+      // Cost is tracked via a single ref, updated here and on completion
       timerRef.current = setInterval(() => {
         if (startTimeRef.current) {
           const simTime = (Date.now() - startTimeRef.current) * ts / 1000
           setElapsedTime(simTime.toFixed(1))
-          if (onCostTick && model.costIn != null) {
+          // Compute current run cost from refs (always fresh, no stale closures)
+          if (model.costIn != null) {
             const threshold = model.costInThreshold ?? Infinity
             const useHigh = (parseInt(model.maxCtx) * 1000) > threshold
             const inRate = useHigh && model.costInHigh ? model.costInHigh : model.costIn
             const outRate = useHigh && model.costOutHigh ? model.costOutHigh : model.costOut
             const runIn = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current + toolResultsRef.current
             const runOut = totalIndexRef.current
-            const runCost = (runIn / 1e6) * inRate + (runOut / 1e6) * outRate
-            onCostTick(streamIndex, (Date.now() - costTickStart) * ts / 1000, cumulativeCostRef.current + runCost)
+            runCostRef.current = (runIn / 1e6) * inRate + (runOut / 1e6) * outRate
+            if (onCostTick) {
+              onCostTick(streamIndex, totalSimTimeRef.current + simTime, cumulativeCostRef.current + runCostRef.current)
+            }
           }
         }
       }, 200)
@@ -666,6 +671,12 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
                   } else {
                     streamAccCtxRef.current += turnTokens
                   }
+
+                  // Accumulate sim time before reset clears startTimeRef
+                  if (startTimeRef.current) {
+                    totalSimTimeRef.current += (Date.now() - startTimeRef.current) * ts / 1000
+                  }
+                  runCostRef.current = 0
 
                   if (onLoopComplete) onLoopComplete(streamIndex)
                   loopTimeoutRef.current = setTimeout(() => {
@@ -842,21 +853,15 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         const useHighTier = maxCtxTokens > threshold
         const inRate = useHighTier && model.costInHigh ? model.costInHigh : model.costIn
         const outRate = useHighTier && model.costOutHigh ? model.costOutHigh : model.costOut
-        // Don't add runCost when complete — it's already in cumulativeCost
-        let runCost = 0
-        if (phase !== 'complete' && phase !== 'idle') {
-          const runInput = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current + toolResultTokens + toolSteps.reduce((s, t) => s + (t.resultTokens ?? 0), 0)
-          const runOutput = displayedTokens.length + thinkingTokensGenerated + toolSteps.reduce((s, t) => s + (t.decodeTokens ?? 0) + (t.thinkTokens ?? 0), 0)
-          runCost = (runInput / 1e6) * inRate + (runOutput / 1e6) * outRate
-        }
-        const totalCost = cumulativeCost + runCost
+        // Single source of truth: cumulativeCostRef (completed runs) + runCostRef (in-progress)
+        const totalCost = cumulativeCostRef.current + runCostRef.current
         const rateLabel = `$${inRate}/$${outRate} per 1M`
         return (
           <div className="cost-row">
             <div className="cost-total">${totalCost < 0.01 ? totalCost.toFixed(4) : totalCost.toFixed(2)}</div>
             <div className="cost-detail">
               <span className="cost-item">{rateLabel}</span>
-              <span className="cost-item cost-breakdown">{loopCount > 0 ? `${loopCount} prior + ` : ''}this run $${runCost < 0.01 ? runCost.toFixed(4) : runCost.toFixed(3)}</span>
+              <span className="cost-item cost-breakdown">{loopCount > 0 ? `${loopCount} prior + ` : ''}this run $${runCostRef.current < 0.01 ? runCostRef.current.toFixed(4) : runCostRef.current.toFixed(3)}</span>
             </div>
           </div>
         )
