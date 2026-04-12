@@ -442,6 +442,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
   const [toolResultTokens, setToolResultTokens] = useState(0)
   const [currentToolIdx, setCurrentToolIdx] = useState(-1)
   const [toolLog, setToolLog] = useState([])
+  const [outputCount, setOutputCount] = useState(0)
   const [loopCount, setLoopCount] = useState(0)
   const [cumulativeIn, setCumulativeIn] = useState(0)
   const [cumulativeOut, setCumulativeOut] = useState(0)
@@ -489,7 +490,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
     clearTimers()
     setDisplayedTokens([]); setPhase('idle'); setThinkingTokensGenerated(0)
     setElapsedTime(0); setPrefillElapsed(0); setCompactElapsed(0); setPrefillSize(0)
-    setToolResultTokens(0); setCurrentToolIdx(-1); setToolLog([])
+    setToolResultTokens(0); setCurrentToolIdx(-1); setToolLog([]); setOutputCount(0)
     totalIndexRef.current = 0; hasStartedRef.current = false
     startTimeRef.current = null; decodeStartRef.current = null; toolResultsRef.current = 0
     runCostRef.current = 0
@@ -501,7 +502,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       if (loopTimeoutRef.current) clearTimeout(loopTimeoutRef.current)
       setDisplayedTokens([]); setPhase('idle'); setThinkingTokensGenerated(0)
       setElapsedTime(0); setPrefillElapsed(0); setCompactElapsed(0); setPrefillSize(0)
-      setToolResultTokens(0); setCurrentToolIdx(-1); setToolLog([])
+      setToolResultTokens(0); setCurrentToolIdx(-1); setToolLog([]); setOutputCount(0)
       setLoopCount(0); setCumulativeIn(0); setCumulativeOut(0); setCumulativeCost(0); setGeneration(0)
       streamAccCtxRef.current = 0; cumulativeCostRef.current = 0; runCostRef.current = 0; totalSimTimeRef.current = 0
       totalIndexRef.current = 0; hasStartedRef.current = false
@@ -519,6 +520,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         if (startTimeRef.current) {
           const simTime = (Date.now() - startTimeRef.current) * ts / 1000
           setElapsedTime(simTime.toFixed(1))
+          setOutputCount(totalIndexRef.current)
           // Compute current run cost from refs (always fresh, no stale closures)
           if (model.costIn != null) {
             const threshold = model.costInThreshold ?? Infinity
@@ -885,12 +887,12 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       )}
 
       <div className="stats-row">
-        <div className="stat"><span className="stat-label">Output{model.outputMul > 1 ? ` (${model.outputMul}x)` : ''}</span><span className="stat-value">{displayedTokens.length.toLocaleString()} / {effectiveOutput.toLocaleString()}</span></div>
+        <div className="stat"><span className="stat-label">Output{model.outputMul > 1 ? ` (${model.outputMul}x)` : ''}</span><span className="stat-value">{outputCount.toLocaleString()} / {effectiveOutput.toLocaleString()}</span></div>
         {toolSteps.length > 0 && <div className="stat"><span className="stat-label">Tool calls</span><span className="stat-value">{Math.min(toolLog.length, toolSteps.length)} / {toolSteps.length}</span></div>}
         <div className="stat"><span className="stat-label">Thinking</span><span className={`stat-value ${!model.thinking ? 'stat-dim' : ''}`}>{thinkingLabel}</span></div>
         <div className="stat"><span className="stat-label">Time</span><span className="stat-value">{elapsedTime}s</span></div>
         {rate && <div className="stat"><span className="stat-label">Actual</span><span className="stat-value">{rate} tok/s</span></div>}
-        {loopCount > 0 && <div className="stat"><span className="stat-label">Total ({loopCount} runs)</span><span className="stat-value">{formatTokens(cumulativeIn)} in / {formatTokens(cumulativeOut)} out{cumulativeCost > 0 ? ` / $${cumulativeCost.toFixed(2)}` : ''}</span></div>}
+        {loopCount > 0 && <div className="stat"><span className="stat-label">Total ({loopCount} runs)</span><span className="stat-value">{formatTokens(cumulativeIn)} in / {formatTokens(cumulativeOut)} out</span></div>}
         {streamAccCtxRef.current > 0 && <div className="stat"><span className="stat-label">Ctx history</span><span className="stat-value">+{formatTokens(streamAccCtxRef.current)}</span></div>}
       </div>
 
