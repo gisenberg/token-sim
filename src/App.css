@@ -189,6 +189,32 @@
   cursor: not-allowed;
 }
 
+/* ── Prompt Select ── */
+
+.prompt-select {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 0.82rem;
+  font-family: var(--sans);
+  background: var(--bg-card);
+  color: var(--text-bright);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+  cursor: pointer;
+}
+
+.prompt-select:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.prompt-desc {
+  font-size: 0.7rem;
+  color: var(--text);
+  opacity: 0.6;
+}
+
 /* ── Model Selectors ── */
 
 .sim-row {

@@ -1,39 +1,43 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import './App.css'
 
+// prefillRate: tokens/sec during prompt processing (measured or estimated)
+// 5090 estimates derived from TTFT @ ~176 token prompt + bandwidth ratio
+// M4 Max estimates from 410/1792 bandwidth ratio vs 5090
+// Spark measured: 627 tok/s @ 32K for Qwen 122B
 const MODELS = [
-  // ── RTX 5090 ──────────────────────────────────────────
-  { id: '5090-gemma26b-q6', name: 'Gemma 4 26B-A4B', quant: 'Q6_K', hardware: 'RTX 5090', tier: 'S', tokPerSec: 139, ttft: 0.061, vram: '26.7 GB', maxCtx: '262K', quality: '17/17', thinking: false, thinkingBudget: 0, color: '#f87171', hwColor: '#86efac' },
-  { id: '5090-gemma31b', name: 'Gemma 4 31B-IT', quant: 'Q4_K_M', hardware: 'RTX 5090', tier: 'S', tokPerSec: 50, ttft: 0.091, vram: '23.6 GB', maxCtx: '58K', quality: '17/17', thinking: false, thinkingBudget: 0, color: '#f87171', hwColor: '#86efac' },
-  { id: '5090-qwen27b-opus', name: 'Qwen 3.5 27B Opus', quant: 'Q4_K_M', hardware: 'RTX 5090', tier: 'A', tokPerSec: 60, ttft: 0.092, vram: '20.5 GB', maxCtx: '262K', quality: '17/17', thinking: false, thinkingBudget: 0, color: '#f87171', hwColor: '#86efac' },
-  { id: '5090-gemma26b-q4', name: 'Gemma 4 26B-A4B', quant: 'Q4_K_M', hardware: 'RTX 5090', tier: 'A', tokPerSec: 150, ttft: 0.058, vram: '21.2 GB', maxCtx: '262K', quality: '16/17', thinking: false, thinkingBudget: 0, color: '#f87171', hwColor: '#86efac' },
-  { id: '5090-harmonic27b', name: 'Harmonic 27B', quant: 'Q4_K_M', hardware: 'RTX 5090', tier: 'A', tokPerSec: 61, ttft: 0.096, vram: '20.5 GB', maxCtx: '262K', quality: '31/31', thinking: true, thinkingBudget: 16384, color: '#f87171', hwColor: '#86efac' },
-  { id: '5090-qwopus27b', name: 'Qwopus 3.5 27B-v3', quant: 'Q6_K', hardware: 'RTX 5090', tier: 'A', tokPerSec: 50, ttft: 0.096, vram: '25.5 GB', maxCtx: '262K', quality: '16/17', thinking: false, thinkingBudget: 0, color: '#f87171', hwColor: '#86efac' },
-  { id: '5090-gemma31b-opus', name: 'Gemma 31B Opus-Dist.', quant: 'Q4_K_M', hardware: 'RTX 5090', tier: 'B', tokPerSec: 51, ttft: 0.088, vram: '23.6 GB', maxCtx: '58K', quality: '16/17', thinking: false, thinkingBudget: 0, color: '#f87171', hwColor: '#86efac' },
-  { id: '5090-qwen35b-a3b', name: 'Qwen 3.5 35B-A3B', quant: 'Q4_K_M', hardware: 'RTX 5090', tier: 'C', tokPerSec: 174, ttft: 0.075, vram: '24.8 GB', maxCtx: '262K', quality: '11/17', thinking: false, thinkingBudget: 0, color: '#f87171', hwColor: '#86efac' },
-  { id: '5090-qwen27b-base', name: 'Qwen 3.5 27B', quant: 'Q6_K (base)', hardware: 'RTX 5090', tier: 'C', tokPerSec: 50, ttft: 0.104, vram: '25.6 GB', maxCtx: '32K', quality: '10/17', thinking: false, thinkingBudget: 0, color: '#f87171', hwColor: '#86efac' },
-  { id: '5090-gemma-e4b', name: 'Gemma 4 E4B', quant: 'Q8_0', hardware: 'RTX 5090', tier: 'F', tokPerSec: 131, ttft: 0.035, vram: '12.5 GB', maxCtx: '32K', quality: '5/22', thinking: false, thinkingBudget: 0, color: '#f87171', hwColor: '#86efac' },
+  // ── RTX 5090 (1,792 GB/s bandwidth) ──────────────────
+  { id: '5090-gemma26b-q6', name: 'Gemma 4 26B-A4B', quant: 'Q6_K', hardware: 'RTX 5090', tier: 'S', tokPerSec: 139, prefillRate: 2900, vram: '26.7 GB', maxCtx: '262K', quality: '17/17', thinking: false, thinkingBudget: 0, color: '#f87171', hwColor: '#86efac' },
+  { id: '5090-gemma31b', name: 'Gemma 4 31B-IT', quant: 'Q4_K_M', hardware: 'RTX 5090', tier: 'S', tokPerSec: 50, prefillRate: 1900, vram: '23.6 GB', maxCtx: '58K', quality: '17/17', thinking: false, thinkingBudget: 0, color: '#f87171', hwColor: '#86efac' },
+  { id: '5090-qwen27b-opus', name: 'Qwen 3.5 27B Opus', quant: 'Q4_K_M', hardware: 'RTX 5090', tier: 'A', tokPerSec: 60, prefillRate: 1900, vram: '20.5 GB', maxCtx: '262K', quality: '17/17', thinking: false, thinkingBudget: 0, color: '#f87171', hwColor: '#86efac' },
+  { id: '5090-gemma26b-q4', name: 'Gemma 4 26B-A4B', quant: 'Q4_K_M', hardware: 'RTX 5090', tier: 'A', tokPerSec: 150, prefillRate: 3000, vram: '21.2 GB', maxCtx: '262K', quality: '16/17', thinking: false, thinkingBudget: 0, color: '#f87171', hwColor: '#86efac' },
+  { id: '5090-harmonic27b', name: 'Harmonic 27B', quant: 'Q4_K_M', hardware: 'RTX 5090', tier: 'A', tokPerSec: 61, prefillRate: 1800, vram: '20.5 GB', maxCtx: '262K', quality: '31/31', thinking: true, thinkingBudget: 16384, color: '#f87171', hwColor: '#86efac' },
+  { id: '5090-qwopus27b', name: 'Qwopus 3.5 27B-v3', quant: 'Q6_K', hardware: 'RTX 5090', tier: 'A', tokPerSec: 50, prefillRate: 1800, vram: '25.5 GB', maxCtx: '262K', quality: '16/17', thinking: false, thinkingBudget: 0, color: '#f87171', hwColor: '#86efac' },
+  { id: '5090-gemma31b-opus', name: 'Gemma 31B Opus-Dist.', quant: 'Q4_K_M', hardware: 'RTX 5090', tier: 'B', tokPerSec: 51, prefillRate: 2000, vram: '23.6 GB', maxCtx: '58K', quality: '16/17', thinking: false, thinkingBudget: 0, color: '#f87171', hwColor: '#86efac' },
+  { id: '5090-qwen35b-a3b', name: 'Qwen 3.5 35B-A3B', quant: 'Q4_K_M', hardware: 'RTX 5090', tier: 'C', tokPerSec: 174, prefillRate: 2400, vram: '24.8 GB', maxCtx: '262K', quality: '11/17', thinking: false, thinkingBudget: 0, color: '#f87171', hwColor: '#86efac' },
+  { id: '5090-qwen27b-base', name: 'Qwen 3.5 27B', quant: 'Q6_K (base)', hardware: 'RTX 5090', tier: 'C', tokPerSec: 50, prefillRate: 1700, vram: '25.6 GB', maxCtx: '32K', quality: '10/17', thinking: false, thinkingBudget: 0, color: '#f87171', hwColor: '#86efac' },
+  { id: '5090-gemma-e4b', name: 'Gemma 4 E4B', quant: 'Q8_0', hardware: 'RTX 5090', tier: 'F', tokPerSec: 131, prefillRate: 5000, vram: '12.5 GB', maxCtx: '32K', quality: '5/22', thinking: false, thinkingBudget: 0, color: '#f87171', hwColor: '#86efac' },
 
-  // ── M4 Max ────────────────────────────────────────────
-  { id: 'm4-gemma31b', name: 'Gemma 4 31B-IT', quant: 'Q4_K_M', hardware: 'M4 Max', tier: 'S', tokPerSec: 15, ttft: 0.45, vram: '~24.3 GB', maxCtx: '64K', quality: '17/17', thinking: false, thinkingBudget: 0, color: '#38bdf8', hwColor: '#93c5fd' },
-  { id: 'm4-gemma26b-q6', name: 'Gemma 4 26B-A4B', quant: 'Q6_K', hardware: 'M4 Max', tier: 'S', tokPerSec: 66, ttft: 0.18, vram: '~23 GB', maxCtx: '32K', quality: '15/17', thinking: false, thinkingBudget: 0, color: '#38bdf8', hwColor: '#93c5fd' },
-  { id: 'm4-qwen27b-mlx', name: 'Qwen 27B Opus MLX', quant: '4-bit', hardware: 'M4 Max', tier: 'A', tokPerSec: 19, ttft: 0.35, vram: '~14 GB', maxCtx: '32K', quality: '13/17', thinking: false, thinkingBudget: 0, color: '#38bdf8', hwColor: '#93c5fd' },
-  { id: 'm4-qwen27b-opus', name: 'Qwen 27B Opus', quant: 'Q4_K_M (planar3)', hardware: 'M4 Max', tier: 'A', tokPerSec: 16, ttft: 0.40, vram: '~16.5 GB', maxCtx: '128K', quality: '11/17', thinking: false, thinkingBudget: 0, color: '#38bdf8', hwColor: '#93c5fd' },
-  { id: 'm4-gemma26b-q4', name: 'Gemma 4 26B-A4B', quant: 'Q4_K_M', hardware: 'M4 Max', tier: 'A', tokPerSec: 59, ttft: 0.15, vram: '~16.5 GB', maxCtx: '64K', quality: '11/17', thinking: false, thinkingBudget: 0, color: '#38bdf8', hwColor: '#93c5fd' },
-  { id: 'm4-qwen9b', name: 'Qwen 3.5 9B', quant: 'Q4_K_M', hardware: 'M4 Max', tier: 'B', tokPerSec: 35, ttft: 0.10, vram: '~5.5 GB', maxCtx: '32K', quality: '9/17', thinking: false, thinkingBudget: 0, color: '#38bdf8', hwColor: '#93c5fd' },
-  { id: 'm4-nemotron4b', name: 'Nemotron 3 Nano 4B', quant: 'Q4_K_M', hardware: 'M4 Max', tier: 'B', tokPerSec: 66, ttft: 0.06, vram: '~2.8 GB', maxCtx: '32K', quality: '7/17', thinking: true, thinkingBudget: 8192, color: '#38bdf8', hwColor: '#93c5fd' },
+  // ── M4 Max (410 GB/s bandwidth) ───────────────────────
+  { id: 'm4-gemma31b', name: 'Gemma 4 31B-IT', quant: 'Q4_K_M', hardware: 'M4 Max', tier: 'S', tokPerSec: 15, prefillRate: 390, vram: '~24.3 GB', maxCtx: '64K', quality: '17/17', thinking: false, thinkingBudget: 0, color: '#38bdf8', hwColor: '#93c5fd' },
+  { id: 'm4-gemma26b-q6', name: 'Gemma 4 26B-A4B', quant: 'Q6_K', hardware: 'M4 Max', tier: 'S', tokPerSec: 66, prefillRate: 980, vram: '~23 GB', maxCtx: '32K', quality: '15/17', thinking: false, thinkingBudget: 0, color: '#38bdf8', hwColor: '#93c5fd' },
+  { id: 'm4-qwen27b-mlx', name: 'Qwen 27B Opus MLX', quant: '4-bit', hardware: 'M4 Max', tier: 'A', tokPerSec: 19, prefillRate: 500, vram: '~14 GB', maxCtx: '32K', quality: '13/17', thinking: false, thinkingBudget: 0, color: '#38bdf8', hwColor: '#93c5fd' },
+  { id: 'm4-qwen27b-opus', name: 'Qwen 27B Opus', quant: 'Q4_K_M (planar3)', hardware: 'M4 Max', tier: 'A', tokPerSec: 16, prefillRate: 440, vram: '~16.5 GB', maxCtx: '128K', quality: '11/17', thinking: false, thinkingBudget: 0, color: '#38bdf8', hwColor: '#93c5fd' },
+  { id: 'm4-gemma26b-q4', name: 'Gemma 4 26B-A4B', quant: 'Q4_K_M', hardware: 'M4 Max', tier: 'A', tokPerSec: 59, prefillRate: 1150, vram: '~16.5 GB', maxCtx: '64K', quality: '11/17', thinking: false, thinkingBudget: 0, color: '#38bdf8', hwColor: '#93c5fd' },
+  { id: 'm4-qwen9b', name: 'Qwen 3.5 9B', quant: 'Q4_K_M', hardware: 'M4 Max', tier: 'B', tokPerSec: 35, prefillRate: 1750, vram: '~5.5 GB', maxCtx: '32K', quality: '9/17', thinking: false, thinkingBudget: 0, color: '#38bdf8', hwColor: '#93c5fd' },
+  { id: 'm4-nemotron4b', name: 'Nemotron 3 Nano 4B', quant: 'Q4_K_M', hardware: 'M4 Max', tier: 'B', tokPerSec: 66, prefillRate: 2900, vram: '~2.8 GB', maxCtx: '32K', quality: '7/17', thinking: true, thinkingBudget: 8192, color: '#38bdf8', hwColor: '#93c5fd' },
 
-  // ── DGX Spark ─────────────────────────────────────────
-  { id: 'spark-qwen122b-ik', name: 'Qwen 3.5 122B-A10B', quant: 'Q4_K_M (ik-llama)', hardware: 'DGX Spark', tier: 'S', tokPerSec: 26, ttft: 0.599, vram: '71 GB', maxCtx: '128K', quality: '17/17', thinking: false, thinkingBudget: 0, color: '#a78bfa', hwColor: '#c4b5fd' },
-  { id: 'spark-qwen122b-unsloth', name: 'Qwen 3.5 122B-A10B', quant: 'Q4_K_M (mainline)', hardware: 'DGX Spark', tier: 'S', tokPerSec: 21, ttft: 0.556, vram: '72 GB', maxCtx: '32K', quality: '18/17', thinking: false, thinkingBudget: 0, color: '#a78bfa', hwColor: '#c4b5fd' },
-  { id: 'spark-glm45', name: 'GLM-4.5-Air', quant: 'Q4_K_M', hardware: 'DGX Spark', tier: 'A', tokPerSec: 22, ttft: 0.539, vram: '70 GB', maxCtx: '32K', quality: '15/17', thinking: false, thinkingBudget: 0, color: '#a78bfa', hwColor: '#c4b5fd' },
-  { id: 'spark-qwen122b-reap', name: 'Qwen 122B REAP-20', quant: 'Q4_K_M (pruned)', hardware: 'DGX Spark', tier: 'A', tokPerSec: 29, ttft: 0.50, vram: '57 GB', maxCtx: '32K', quality: '14/17', thinking: false, thinkingBudget: 0, color: '#a78bfa', hwColor: '#c4b5fd' },
-  { id: 'spark-qwen122b-mainline', name: 'Qwen 122B-A10B', quant: 'Q4_K_M (bartowski)', hardware: 'DGX Spark', tier: 'A', tokPerSec: 26, ttft: 0.55, vram: '71 GB', maxCtx: '32K', quality: '13/17', thinking: false, thinkingBudget: 0, color: '#a78bfa', hwColor: '#c4b5fd' },
-  { id: 'spark-qwen3-coder', name: 'Qwen3-Coder-Next', quant: 'UD-Q4_K_M', hardware: 'DGX Spark', tier: 'B', tokPerSec: 50, ttft: 0.40, vram: '46 GB', maxCtx: '32K', quality: '14/17', thinking: false, thinkingBudget: 0, color: '#a78bfa', hwColor: '#c4b5fd' },
-  { id: 'spark-nemotron120b', name: 'Nemotron-3 Super 120B', quant: 'Q4_K_M', hardware: 'DGX Spark', tier: 'B', tokPerSec: 20, ttft: 0.70, vram: '87 GB', maxCtx: '32K', quality: '11/17', thinking: true, thinkingBudget: 16384, color: '#a78bfa', hwColor: '#c4b5fd' },
-  { id: 'spark-minimax', name: 'MiniMax-M2.5', quant: 'UD-Q3_K_XL', hardware: 'DGX Spark', tier: 'C', tokPerSec: 30, ttft: 0.95, vram: '96 GB', maxCtx: '32K', quality: '5/15', thinking: true, thinkingBudget: 16384, color: '#a78bfa', hwColor: '#c4b5fd' },
-  { id: 'spark-mistral119b', name: 'Mistral-Small-4 119B', quant: 'Q4_K_M', hardware: 'DGX Spark', tier: 'D', tokPerSec: 9, ttft: 0.60, vram: '69 GB', maxCtx: '32K', quality: '7/17', thinking: false, thinkingBudget: 0, color: '#a78bfa', hwColor: '#c4b5fd' },
-  { id: 'spark-gemma31b-dense', name: 'Gemma 4 31B-IT', quant: 'Q8_0 (dense)', hardware: 'DGX Spark', tier: 'F', tokPerSec: 7, ttft: 0.40, vram: '~58 GB', maxCtx: '32K', quality: 'N/A', thinking: false, thinkingBudget: 0, color: '#a78bfa', hwColor: '#c4b5fd' },
+  // ── DGX Spark (273 GB/s bandwidth) ────────────────────
+  { id: 'spark-qwen122b-ik', name: 'Qwen 3.5 122B-A10B', quant: 'Q4_K_M (ik-llama)', hardware: 'DGX Spark', tier: 'S', tokPerSec: 26, prefillRate: 627, vram: '71 GB', maxCtx: '128K', quality: '17/17', thinking: false, thinkingBudget: 0, color: '#a78bfa', hwColor: '#c4b5fd' },
+  { id: 'spark-qwen122b-unsloth', name: 'Qwen 3.5 122B-A10B', quant: 'Q4_K_M (mainline)', hardware: 'DGX Spark', tier: 'S', tokPerSec: 21, prefillRate: 600, vram: '72 GB', maxCtx: '32K', quality: '18/17', thinking: false, thinkingBudget: 0, color: '#a78bfa', hwColor: '#c4b5fd' },
+  { id: 'spark-glm45', name: 'GLM-4.5-Air', quant: 'Q4_K_M', hardware: 'DGX Spark', tier: 'A', tokPerSec: 22, prefillRate: 627, vram: '70 GB', maxCtx: '32K', quality: '15/17', thinking: false, thinkingBudget: 0, color: '#a78bfa', hwColor: '#c4b5fd' },
+  { id: 'spark-qwen122b-reap', name: 'Qwen 122B REAP-20', quant: 'Q4_K_M (pruned)', hardware: 'DGX Spark', tier: 'A', tokPerSec: 29, prefillRate: 700, vram: '57 GB', maxCtx: '32K', quality: '14/17', thinking: false, thinkingBudget: 0, color: '#a78bfa', hwColor: '#c4b5fd' },
+  { id: 'spark-qwen122b-mainline', name: 'Qwen 122B-A10B', quant: 'Q4_K_M (bartowski)', hardware: 'DGX Spark', tier: 'A', tokPerSec: 26, prefillRate: 620, vram: '71 GB', maxCtx: '32K', quality: '13/17', thinking: false, thinkingBudget: 0, color: '#a78bfa', hwColor: '#c4b5fd' },
+  { id: 'spark-qwen3-coder', name: 'Qwen3-Coder-Next', quant: 'UD-Q4_K_M', hardware: 'DGX Spark', tier: 'B', tokPerSec: 50, prefillRate: 800, vram: '46 GB', maxCtx: '32K', quality: '14/17', thinking: false, thinkingBudget: 0, color: '#a78bfa', hwColor: '#c4b5fd' },
+  { id: 'spark-nemotron120b', name: 'Nemotron-3 Super 120B', quant: 'Q4_K_M', hardware: 'DGX Spark', tier: 'B', tokPerSec: 20, prefillRate: 500, vram: '87 GB', maxCtx: '32K', quality: '11/17', thinking: true, thinkingBudget: 16384, color: '#a78bfa', hwColor: '#c4b5fd' },
+  { id: 'spark-minimax', name: 'MiniMax-M2.5', quant: 'UD-Q3_K_XL', hardware: 'DGX Spark', tier: 'C', tokPerSec: 30, prefillRate: 400, vram: '96 GB', maxCtx: '32K', quality: '5/15', thinking: true, thinkingBudget: 16384, color: '#a78bfa', hwColor: '#c4b5fd' },
+  { id: 'spark-mistral119b', name: 'Mistral-Small-4 119B', quant: 'Q4_K_M', hardware: 'DGX Spark', tier: 'D', tokPerSec: 9, prefillRate: 350, vram: '69 GB', maxCtx: '32K', quality: '7/17', thinking: false, thinkingBudget: 0, color: '#a78bfa', hwColor: '#c4b5fd' },
+  { id: 'spark-gemma31b-dense', name: 'Gemma 4 31B-IT', quant: 'Q8_0 (dense)', hardware: 'DGX Spark', tier: 'F', tokPerSec: 7, prefillRate: 250, vram: '~58 GB', maxCtx: '32K', quality: 'N/A', thinking: false, thinkingBudget: 0, color: '#a78bfa', hwColor: '#c4b5fd' },
 ]
 
 const TIER_ORDER = { S: 0, A: 1, B: 2, C: 3, D: 4, F: 5 }
@@ -80,6 +84,15 @@ const generateText = (tokenCount) => {
   return tokens
 }
 
+const PROMPT_PRESETS = [
+  { label: 'Quick question', tokens: 500, desc: 'Short prompt, no context' },
+  { label: 'Single file edit', tokens: 2000, desc: '~1 file + instructions' },
+  { label: 'Multi-file task', tokens: 8000, desc: '3-5 files + conversation' },
+  { label: 'Large refactor', tokens: 24000, desc: '10+ files + history' },
+  { label: 'Full codebase context', tokens: 64000, desc: 'Deep repo exploration' },
+  { label: 'Max context window', tokens: 100000, desc: 'Pushing the limits' },
+]
+
 const TIER_COLORS = {
   S: '#fbbf24',
   A: '#34d399',
@@ -89,12 +102,13 @@ const TIER_COLORS = {
   F: '#6b7280',
 }
 
-const formatTtft = (seconds) => {
+const formatTime = (seconds) => {
   if (seconds < 1) return `${Math.round(seconds * 1000)}ms`
-  return `${seconds.toFixed(2)}s`
+  if (seconds < 10) return `${seconds.toFixed(1)}s`
+  return `${Math.round(seconds)}s`
 }
 
-const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, onComplete, streamIndex }) => {
+const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptTokens, onComplete, streamIndex }) => {
   const [displayedTokens, setDisplayedTokens] = useState([])
   const [phase, setPhase] = useState('idle')
   const [thinkingTokensGenerated, setThinkingTokensGenerated] = useState(0)
@@ -160,7 +174,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, onComplete
         }
       }, 100)
 
-      const prefillMs = model.ttft * 1000
+      const prefillMs = (promptTokens / model.prefillRate) * 1000
       const prefillStart = Date.now()
       const animatePrefill = () => {
         const elapsed = Date.now() - prefillStart
@@ -214,7 +228,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, onComplete
       if (intervalRef.current) clearInterval(intervalRef.current)
       if (timerRef.current) clearInterval(timerRef.current)
     }
-  }, [isRunning, isReset, model.tokPerSec, model.ttft, thinkingBudget, tokenCount, totalTokens, tokens, onComplete, streamIndex])
+  }, [isRunning, isReset, model.tokPerSec, model.prefillRate, promptTokens, thinkingBudget, tokenCount, totalTokens, tokens, onComplete, streamIndex])
 
   useEffect(() => {
     if (displayedTokens.length > 0) {
@@ -268,7 +282,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, onComplete
       <div className="hw-row">
         <span className="hw-badge" style={{ color: model.hwColor }}>{model.hardware}</span>
         <span className="hw-spec">{model.tokPerSec} tok/s</span>
-        <span className="hw-spec">TTFT {formatTtft(model.ttft)}</span>
+        <span className="hw-spec">{model.prefillRate} pp/s</span>
         <span className="hw-spec">{model.maxCtx} ctx</span>
         <span className="hw-spec">{model.quality} pass</span>
       </div>
@@ -309,7 +323,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, onComplete
               style={{ width: `${prefillElapsed * 100}%`, background: model.color }}
             />
           </div>
-          <span className="prefill-label">Prefilling prompt — TTFT {formatTtft(model.ttft)}</span>
+          <span className="prefill-label">Prefilling {promptTokens.toLocaleString()} prompt tokens @ {model.prefillRate} tok/s — {formatTime(promptTokens / model.prefillRate)}</span>
         </div>
       )}
 
@@ -348,6 +362,7 @@ function App() {
   const [isRunning, setIsRunning] = useState(false)
   const [isReset, setIsReset] = useState(false)
   const [tokenCount, setTokenCount] = useState(1500)
+  const [promptTokens, setPromptTokens] = useState(2000)
   const [selectedIds, setSelectedIds] = useState([
     '5090-gemma26b-q6',
     'm4-gemma26b-q6',
@@ -434,6 +449,28 @@ function App() {
           </div>
         </div>
 
+        <div className="control-group">
+          <label>
+            Prompt context
+            <span>{promptTokens.toLocaleString()} tokens</span>
+          </label>
+          <select
+            value={promptTokens}
+            onChange={(e) => setPromptTokens(parseInt(e.target.value))}
+            disabled={controlsDisabled}
+            className="prompt-select"
+          >
+            {PROMPT_PRESETS.map(p => (
+              <option key={p.tokens} value={p.tokens}>
+                {p.label} — {p.tokens.toLocaleString()} tokens
+              </option>
+            ))}
+          </select>
+          <div className="prompt-desc">
+            {PROMPT_PRESETS.find(p => p.tokens === promptTokens)?.desc}
+          </div>
+        </div>
+
         <div className="button-group">
           <button
             onClick={handleStart}
@@ -495,6 +532,7 @@ function App() {
                 isRunning={isRunning}
                 isReset={isReset}
                 tokenCount={tokenCount}
+                promptTokens={promptTokens}
                 onComplete={handleComplete}
                 streamIndex={rowStart + i}
               />
