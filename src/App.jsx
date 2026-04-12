@@ -11,7 +11,7 @@ const CITATIONS = {
 // weightGB: base VRAM (weights + compute buffers, no KV). Derived from measured VRAM@32K minus KV@32K.
 // kvPerTokKB: incremental KV per token. Measured from context-size deltas where available.
 // 5090 values: measured via turbo4 experiments. M4/Spark: estimated from weight sizes + arch.
-const HW_MEM = { 'RTX 5090': 32, 'M4 Max': 29, 'DGX Spark': 120 }
+const HW_MEM = { 'RTX 5090': 32, 'M4 Max': 30, 'DGX Spark': 120 }
 
 const MODELS = [
   // RTX 5090 — measured VRAM from experiments/**/all_results.json (turbo4 KV @ 32K)
