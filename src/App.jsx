@@ -236,8 +236,10 @@ const PROMPT_PRESETS = [
   { label: 'Single file edit', tokens: 2000, desc: '~1 file + instructions' },
   { label: 'Multi-file task', tokens: 8000, desc: '3-5 files + conversation' },
   { label: 'Large refactor', tokens: 24000, desc: '10+ files + history' },
-  { label: 'Full codebase context', tokens: 64000, desc: 'Deep repo exploration' },
-  { label: 'Max context window', tokens: 100000, desc: 'Pushing the limits' },
+  { label: 'Deep exploration', tokens: 64000, desc: 'Many files + long conversation' },
+  { label: 'Small C++ project', tokens: 120000, desc: '~50K LOC, CMake, few deps' },
+  { label: 'Medium C++ project', tokens: 350000, desc: '~200K LOC, engine subsystem' },
+  { label: 'Large C++ / UE5 project', tokens: 800000, desc: '~500K+ LOC, Unreal from source' },
 ]
 
 const OUTPUT_PRESETS = [
