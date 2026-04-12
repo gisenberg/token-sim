@@ -240,6 +240,7 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  height: 580px;
   overflow: hidden;
   transition: border-color 0.3s;
 }
@@ -597,8 +598,8 @@
   color: var(--text-bright);
   overflow-x: hidden;
   overflow-y: auto;
-  height: 340px;
-  flex-shrink: 0;
+  flex: 1;
+  min-height: 0;
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
