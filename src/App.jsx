@@ -478,8 +478,9 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       hasStartedRef.current = true
       startTimeRef.current = Date.now()
 
+      // Elapsed time shows simulated time (real time * timeScale)
       timerRef.current = setInterval(() => {
-        if (startTimeRef.current) setElapsedTime(((Date.now() - startTimeRef.current) / 1000).toFixed(1))
+        if (startTimeRef.current) setElapsedTime(((Date.now() - startTimeRef.current) * ts / 1000).toFixed(1))
       }, 100)
 
       const maxCtx = parseInt(model.maxCtx) * 1000
@@ -528,20 +529,34 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       }
 
       // Stream N tokens of visible output, then call next()
+      // Uses time-based batching: at high timeScales, emits multiple tokens per tick
+      const streamTokens = (target, onDone) => {
+        const tokPerMs = model.tokPerSec * ts / 1000
+        const streamStart = Date.now()
+        const baseIndex = totalIndexRef.current
+        const tickInterval = Math.max(16, Math.floor(1000 / model.tokPerSec / ts))
+        intervalRef.current = setInterval(() => {
+          const elapsed = Date.now() - streamStart
+          const shouldBe = Math.min(baseIndex + Math.floor(elapsed * tokPerMs), target, effectiveOutput)
+          if (totalIndexRef.current < shouldBe) {
+            const batch = []
+            while (totalIndexRef.current < shouldBe) {
+              batch.push(tokens[totalIndexRef.current])
+              totalIndexRef.current++
+            }
+            setDisplayedTokens(prev => [...prev, ...batch])
+          }
+          if (totalIndexRef.current >= target || totalIndexRef.current >= effectiveOutput) {
+            clearInterval(intervalRef.current)
+            onDone()
+          }
+        }, tickInterval)
+      }
+
       const streamChunk = (count, next) => {
         if (count <= 0) { next(); return }
         setPhase('streaming')
-        const target = totalIndexRef.current + count
-        const interval = 1000 / model.tokPerSec / ts
-        intervalRef.current = setInterval(() => {
-          if (totalIndexRef.current < target && totalIndexRef.current < effectiveOutput) {
-            setDisplayedTokens(prev => [...prev, tokens[totalIndexRef.current]])
-            totalIndexRef.current++
-          } else {
-            clearInterval(intervalRef.current)
-            next()
-          }
-        }, interval)
+        streamTokens(totalIndexRef.current + count, next)
       }
 
       // Prefill then call next()
@@ -571,7 +586,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
             doThinking(thinkAmount, () => {
               streamChunk(finalOutput, () => {
                 clearInterval(timerRef.current)
-                if (startTimeRef.current) setElapsedTime(((Date.now() - startTimeRef.current) / 1000).toFixed(1))
+                if (startTimeRef.current) setElapsedTime(((Date.now() - startTimeRef.current) * ts / 1000).toFixed(1))
                 setPhase('complete'); onComplete(streamIndex)
               })
             })
@@ -653,7 +668,9 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
   }, [displayedTokens, toolLog, scrollToBottom])
 
   const totalProgress = totalTokens > 0 ? ((thinkingTokensGenerated + displayedTokens.length) / totalTokens) * 100 : 0
-  const decodeElapsed = decodeStartRef.current ? (Date.now() - decodeStartRef.current) / 1000 : 0
+  // "Actual" tok/s should reflect simulated time (real wall time * timeScale)
+  const ts = timeScale || 1
+  const decodeElapsed = decodeStartRef.current ? (Date.now() - decodeStartRef.current) * ts / 1000 : 0
   const rate = displayedTokens.length > 0 && decodeElapsed > 0 ? (displayedTokens.length / decodeElapsed).toFixed(1) : null
 
   const phaseLabels = { idle: 'Ready', compacting: 'Compacting', prefill: 'Prefill', 'tool-decode': 'Tool Call', 'tool-exec': 'Executing', thinking: 'Thinking', streaming: 'Streaming', complete: 'Done' }
