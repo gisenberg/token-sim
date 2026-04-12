@@ -206,34 +206,63 @@ const OUTPUT_PRESETS = [
   { label: 'Max output', tokens: 16000, desc: 'Pushing output limits' },
 ]
 
+// Tool steps: thinkTokens = short reasoning per call, parallel = grouped concurrent calls
+// Thinking is distributed: short per tool call + remainder before final output
 const TOOL_PRESETS = [
   { label: 'No tool calls', steps: [], desc: 'Single inference, no agent loop' },
   { label: 'Light agent (3)', steps: [
-    { label: 'Read src/db/pool.ts', decodeTokens: 50, execMs: 200, resultTokens: 800 },
-    { label: 'Grep "acquire" in src/', decodeTokens: 40, execMs: 300, resultTokens: 400 },
-    { label: 'Edit src/db/pool.ts', decodeTokens: 80, execMs: 100, resultTokens: 200 },
+    { label: 'Read src/db/pool.ts', thinkTokens: 200, decodeTokens: 50, execMs: 200, resultTokens: 800 },
+    { label: 'Grep "acquire" in src/', thinkTokens: 150, decodeTokens: 40, execMs: 300, resultTokens: 400 },
+    { label: 'Edit src/db/pool.ts', thinkTokens: 400, decodeTokens: 80, execMs: 100, resultTokens: 200 },
   ], desc: 'Read, search, edit' },
   { label: 'Standard agent (6)', steps: [
-    { label: 'Read src/db/pool.ts', decodeTokens: 50, execMs: 200, resultTokens: 800 },
-    { label: 'Read src/db/types.ts', decodeTokens: 40, execMs: 200, resultTokens: 600 },
-    { label: 'Grep "Connection" in src/', decodeTokens: 45, execMs: 300, resultTokens: 500 },
-    { label: 'Edit src/db/pool.ts', decodeTokens: 80, execMs: 100, resultTokens: 200 },
-    { label: 'Run npm test', decodeTokens: 30, execMs: 3000, resultTokens: 1200 },
-    { label: 'Edit src/db/pool.test.ts', decodeTokens: 90, execMs: 100, resultTokens: 300 },
+    { label: 'Read src/db/pool.ts', thinkTokens: 200, decodeTokens: 50, execMs: 200, resultTokens: 800 },
+    [  // parallel group
+      { label: 'Read src/db/types.ts', thinkTokens: 100, decodeTokens: 40, execMs: 200, resultTokens: 600 },
+      { label: 'Grep "Connection" in src/', thinkTokens: 100, decodeTokens: 45, execMs: 300, resultTokens: 500 },
+    ],
+    { label: 'Edit src/db/pool.ts', thinkTokens: 500, decodeTokens: 80, execMs: 100, resultTokens: 200 },
+    { label: 'Run npm test', thinkTokens: 100, decodeTokens: 30, execMs: 3000, resultTokens: 1200 },
+    { label: 'Edit src/db/pool.test.ts', thinkTokens: 400, decodeTokens: 90, execMs: 100, resultTokens: 300 },
   ], desc: 'Read, search, edit, test, fix' },
   { label: 'Deep exploration (10)', steps: [
-    { label: 'Glob src/**/*.ts', decodeTokens: 30, execMs: 100, resultTokens: 300 },
-    { label: 'Read src/db/pool.ts', decodeTokens: 50, execMs: 200, resultTokens: 800 },
-    { label: 'Read src/db/types.ts', decodeTokens: 40, execMs: 200, resultTokens: 600 },
-    { label: 'Read src/db/migrations.ts', decodeTokens: 45, execMs: 200, resultTokens: 900 },
-    { label: 'Grep "acquire" in src/', decodeTokens: 40, execMs: 300, resultTokens: 500 },
-    { label: 'Read src/server/handler.ts', decodeTokens: 50, execMs: 200, resultTokens: 700 },
-    { label: 'Edit src/db/pool.ts', decodeTokens: 80, execMs: 100, resultTokens: 200 },
-    { label: 'Edit src/db/pool.test.ts', decodeTokens: 90, execMs: 100, resultTokens: 300 },
-    { label: 'Run npm test', decodeTokens: 30, execMs: 3000, resultTokens: 1200 },
-    { label: 'Read test output', decodeTokens: 30, execMs: 100, resultTokens: 400 },
+    { label: 'Glob src/**/*.ts', thinkTokens: 100, decodeTokens: 30, execMs: 100, resultTokens: 300 },
+    [  // parallel reads
+      { label: 'Read src/db/pool.ts', thinkTokens: 80, decodeTokens: 50, execMs: 200, resultTokens: 800 },
+      { label: 'Read src/db/types.ts', thinkTokens: 80, decodeTokens: 40, execMs: 200, resultTokens: 600 },
+      { label: 'Read src/db/migrations.ts', thinkTokens: 80, decodeTokens: 45, execMs: 200, resultTokens: 900 },
+    ],
+    { label: 'Grep "acquire" in src/', thinkTokens: 150, decodeTokens: 40, execMs: 300, resultTokens: 500 },
+    { label: 'Read src/server/handler.ts', thinkTokens: 150, decodeTokens: 50, execMs: 200, resultTokens: 700 },
+    [  // parallel edits
+      { label: 'Edit src/db/pool.ts', thinkTokens: 300, decodeTokens: 80, execMs: 100, resultTokens: 200 },
+      { label: 'Edit src/db/pool.test.ts', thinkTokens: 300, decodeTokens: 90, execMs: 100, resultTokens: 300 },
+    ],
+    { label: 'Run npm test', thinkTokens: 100, decodeTokens: 30, execMs: 3000, resultTokens: 1200 },
+    { label: 'Read test output', thinkTokens: 100, decodeTokens: 30, execMs: 100, resultTokens: 400 },
   ], desc: 'Full codebase exploration, multi-file edit, test' },
 ]
+
+// Flatten tool steps: parallel groups become a single step with combined stats
+const flattenSteps = (steps) => {
+  const flat = []
+  for (const s of steps) {
+    if (Array.isArray(s)) {
+      // Parallel group: think+decode is sum (emitted sequentially), exec is max (concurrent), results sum
+      flat.push({
+        label: s.map(t => t.label.split(' ')[0]).join(' + '),
+        parallel: s.map(t => t.label),
+        thinkTokens: s.reduce((sum, t) => sum + t.thinkTokens, 0),
+        decodeTokens: s.reduce((sum, t) => sum + t.decodeTokens, 0),
+        execMs: Math.max(...s.map(t => t.execMs)),
+        resultTokens: s.reduce((sum, t) => sum + t.resultTokens, 0),
+      })
+    } else {
+      flat.push(s)
+    }
+  }
+  return flat
+}
 
 const TIER_COLORS = { S: '#fbbf24', A: '#34d399', B: '#60a5fa', C: '#a78bfa', D: '#f87171', F: '#6b7280' }
 const formatTime = (s) => s < 1 ? `${Math.round(s * 1000)}ms` : s < 10 ? `${s.toFixed(1)}s` : `${Math.round(s)}s`
@@ -318,32 +347,52 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         tick()
       }
 
-      // Run the final output decode
-      // Skip thinking phase when tool calls are active — the tool loop is the reasoning
-      const useThinking = thinkingBudget > 0 && toolSteps.length === 0
-      const decodeTotal = useThinking ? totalTokens : effectiveOutput
+      // Thinking: distributed across tool steps + final output
+      // Total thinking per tool step is step.thinkTokens (short reasoning per call)
+      // Remaining thinking budget goes to the final output synthesis
+      const totalStepThinking = toolSteps.reduce((s, t) => s + (t.thinkTokens || 0), 0)
+      const finalThinking = thinkingBudget > 0
+        ? Math.max(0, thinkingBudget - (toolSteps.length > 0 ? totalStepThinking : 0))
+        : 0
+
+      // Simulate thinking for N tokens, then call next()
+      const doThinking = (thinkCount, next) => {
+        if (thinkCount <= 0) { next(); return }
+        setPhase('thinking')
+        const thinkMs = (thinkCount / model.tokPerSec) * 1000
+        setThinkingTokensGenerated(prev => prev) // trigger display
+        const thinkStart = Date.now()
+        const tickThink = () => {
+          const elapsed = Date.now() - thinkStart
+          const generated = Math.min(Math.floor(elapsed / (1000 / model.tokPerSec)), thinkCount)
+          setThinkingTokensGenerated(prev => prev + (generated - (prev - (totalIndexRef.current - generated))))
+          if (elapsed < thinkMs) timeoutRef.current = setTimeout(tickThink, 50)
+          else next()
+        }
+        tickThink()
+      }
 
       const startFinalDecode = () => {
         decodeStartRef.current = Date.now()
-        setPhase(useThinking ? 'thinking' : 'streaming')
-        const interval = 1000 / model.tokPerSec
-        intervalRef.current = setInterval(() => {
-          if (totalIndexRef.current < decodeTotal) {
-            if (useThinking && totalIndexRef.current < thinkingBudget) {
-              setThinkingTokensGenerated(totalIndexRef.current + 1)
+
+        const beginStreaming = () => {
+          setPhase('streaming')
+          const interval = 1000 / model.tokPerSec
+          intervalRef.current = setInterval(() => {
+            if (totalIndexRef.current < effectiveOutput) {
+              setDisplayedTokens(prev => [...prev, tokens[totalIndexRef.current]])
               totalIndexRef.current++
             } else {
-              if (useThinking && totalIndexRef.current === thinkingBudget) setPhase('streaming')
-              const di = totalIndexRef.current - (useThinking ? thinkingBudget : 0)
-              if (di < effectiveOutput) setDisplayedTokens(prev => [...prev, tokens[di]])
-              totalIndexRef.current++
+              clearInterval(intervalRef.current); clearInterval(timerRef.current)
+              if (startTimeRef.current) setElapsedTime(((Date.now() - startTimeRef.current) / 1000).toFixed(1))
+              setPhase('complete'); onComplete(streamIndex)
             }
-          } else {
-            clearInterval(intervalRef.current); clearInterval(timerRef.current)
-            if (startTimeRef.current) setElapsedTime(((Date.now() - startTimeRef.current) / 1000).toFixed(1))
-            setPhase('complete'); onComplete(streamIndex)
-          }
-        }, interval)
+          }, interval)
+        }
+
+        // Final thinking before output (full budget for single-turn, remainder for agent)
+        const thinkAmount = toolSteps.length === 0 ? thinkingBudget : finalThinking
+        doThinking(thinkAmount, beginStreaming)
       }
 
       // Prefill then start decode
@@ -367,23 +416,32 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         setCurrentToolIdx(i)
         const currentCtx = SYSTEM_TOKENS + promptTokens + toolResultsRef.current
 
-        // Prefill current context
+        // Prefill → think → tool-call decode → tool exec → next
         startPrefill(currentCtx, () => {
-          // Decode the tool call (short)
-          setPhase('tool-decode')
-          const decodeMs = (step.decodeTokens / model.tokPerSec) * 1000
-          timeoutRef.current = setTimeout(() => {
-            // Tool execution
-            setPhase('tool-exec')
-            setToolLog(prev => [...prev, { label: step.label, tokens: step.resultTokens }])
+          const stepThink = thinkingBudget > 0 ? (step.thinkTokens || 0) : 0
+          doThinking(stepThink, () => {
+            setPhase('tool-decode')
+            const decodeMs = (step.decodeTokens / model.tokPerSec) * 1000
             timeoutRef.current = setTimeout(() => {
-              // Add result to context
-              toolResultsRef.current += step.resultTokens + step.decodeTokens
-              setToolResultTokens(toolResultsRef.current)
-              // Next step
-              runToolStep(i + 1)
-            }, step.execMs)
-          }, decodeMs)
+              setPhase('tool-exec')
+              const logEntries = step.parallel
+                ? step.parallel.map(l => ({ label: l, tokens: 0 }))
+                : [{ label: step.label, tokens: step.resultTokens }]
+              if (step.parallel) {
+                logEntries[logEntries.length - 1].tokens = step.resultTokens
+              }
+              setToolLog(prev => [...prev, ...logEntries.map((e, idx) => ({
+                ...e,
+                tokens: step.parallel ? Math.round(step.resultTokens / step.parallel.length) : step.resultTokens,
+                parallel: step.parallel && idx > 0,
+              }))])
+              timeoutRef.current = setTimeout(() => {
+                toolResultsRef.current += step.resultTokens + step.decodeTokens + stepThink
+                setToolResultTokens(toolResultsRef.current)
+                runToolStep(i + 1)
+              }, step.execMs)
+            }, decodeMs)
+          })
         })
       }
 
@@ -532,8 +590,8 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       {(phase === 'tool-decode' || phase === 'tool-exec') && currentStep && (
         <div className="tool-banner">
           <span className={`tool-icon ${phase === 'tool-exec' ? 'tool-running' : ''}`}>{phase === 'tool-exec' ? '⚙' : '→'}</span>
-          <span className="tool-label">{currentStep.label}</span>
-          {phase === 'tool-exec' && <span className="tool-exec-badge">executing</span>}
+          <span className="tool-label">{currentStep.parallel ? currentStep.parallel.join(', ') : currentStep.label}</span>
+          {phase === 'tool-exec' && <span className="tool-exec-badge">{currentStep.parallel ? 'parallel' : 'executing'}</span>}
         </div>
       )}
 
@@ -548,8 +606,8 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         {toolLog.length > 0 && (
           <div className="tool-log">
             {toolLog.map((entry, i) => (
-              <div key={i} className="tool-log-entry">
-                <span className="tool-log-icon">→</span>
+              <div key={i} className={`tool-log-entry ${entry.parallel ? 'tool-log-parallel' : ''}`}>
+                <span className="tool-log-icon">{entry.parallel ? '├' : '→'}</span>
                 <span className="tool-log-label">{entry.label}</span>
                 <span className="tool-log-tokens">+{entry.tokens.toLocaleString()} tok</span>
               </div>
@@ -581,7 +639,7 @@ function App() {
   const maxThinkingBudget = Math.max(...selectedModels.map(m => m.thinkingBudget))
   const maxOutputMul = Math.max(...selectedModels.map(m => m.outputMul || 1))
   const maxTotalTokens = Math.round(tokenCount * maxOutputMul) + maxThinkingBudget
-  const toolSteps = TOOL_PRESETS[toolPresetIdx].steps
+  const toolSteps = useMemo(() => flattenSteps(TOOL_PRESETS[toolPresetIdx].steps), [toolPresetIdx])
 
   const handleExperimentChange = (id) => { if (!isRunning) { setActiveExperiment(id); setCompletedStreams(new Set()) } }
   const handleComplete = useCallback((index) => { setCompletedStreams(prev => { const next = new Set(prev); next.add(index); return next }) }, [])
