@@ -346,6 +346,14 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
     ? `${model.thinkingBudget.toLocaleString()}`
     : 'Off'
 
+  // Context window usage
+  const maxCtxTokens = parseInt(model.maxCtx) * 1000
+  const usedTokens = promptTokens + thinkingBudget + tokenCount
+  const overflows = usedTokens > maxCtxTokens
+  const promptPct = Math.min((promptTokens / maxCtxTokens) * 100, 100)
+  const thinkingPct = Math.min((thinkingBudget / maxCtxTokens) * 100, 100 - promptPct)
+  const outputPct = Math.min((tokenCount / maxCtxTokens) * 100, Math.max(0, 100 - promptPct - thinkingPct))
+
   return (
     <div className={cardClass}>
       <div className="card-accent" style={{ background: model.color }} />
@@ -367,6 +375,25 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         <span className="hw-spec">{model.prefillRate} pp/s</span>
         <span className="hw-spec">{model.maxCtx} ctx</span>
         <span className="hw-spec">{model.quality} pass</span>
+      </div>
+
+      <div className="ctx-bar-wrapper">
+        <div className="ctx-bar-labels">
+          <span>Context: {usedTokens.toLocaleString()} / {maxCtxTokens.toLocaleString()}{overflows ? ' — overflow!' : ''}</span>
+        </div>
+        <div className={`ctx-bar ${overflows ? 'ctx-overflow' : ''}`}>
+          <div className="ctx-seg ctx-prompt" style={{ width: `${promptPct}%` }} title={`Prompt: ${promptTokens.toLocaleString()}`} />
+          {thinkingBudget > 0 && (
+            <div className="ctx-seg ctx-thinking" style={{ width: `${thinkingPct}%` }} title={`Thinking: ${thinkingBudget.toLocaleString()}`} />
+          )}
+          <div className="ctx-seg ctx-output" style={{ width: `${outputPct}%` }} title={`Output: ${tokenCount.toLocaleString()}`} />
+        </div>
+        <div className="ctx-bar-legend">
+          <span className="ctx-legend-item"><span className="ctx-swatch ctx-prompt" />Prompt</span>
+          {thinkingBudget > 0 && <span className="ctx-legend-item"><span className="ctx-swatch ctx-thinking" />Thinking</span>}
+          <span className="ctx-legend-item"><span className="ctx-swatch ctx-output" />Output</span>
+          <span className="ctx-legend-item ctx-free">{Math.max(0, maxCtxTokens - usedTokens).toLocaleString()} free</span>
+        </div>
       </div>
 
       <div className="stats-row">

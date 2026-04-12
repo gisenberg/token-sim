@@ -417,6 +417,80 @@
   vertical-align: middle;
 }
 
+/* ── Context Bar ── */
+
+.ctx-bar-wrapper {
+  padding: 8px 16px 6px;
+}
+
+.ctx-bar-labels {
+  font-size: 0.68rem;
+  color: var(--text);
+  margin-bottom: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ctx-bar {
+  display: flex;
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+  gap: 1px;
+}
+
+.ctx-bar.ctx-overflow {
+  outline: 1px solid #f87171;
+  outline-offset: 1px;
+}
+
+.ctx-seg {
+  height: 100%;
+  min-width: 1px;
+  transition: width 0.15s;
+}
+
+.ctx-seg.ctx-prompt,
+.ctx-swatch.ctx-prompt {
+  background: #64748b;
+}
+
+.ctx-seg.ctx-thinking,
+.ctx-swatch.ctx-thinking {
+  background: #fbbf24;
+}
+
+.ctx-seg.ctx-output,
+.ctx-swatch.ctx-output {
+  background: #34d399;
+}
+
+.ctx-bar-legend {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+  font-size: 0.6rem;
+  color: var(--text);
+}
+
+.ctx-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.ctx-legend-item.ctx-free {
+  margin-left: auto;
+  opacity: 0.6;
+}
+
+.ctx-swatch {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+}
+
 /* ── Stats Row ── */
 
 .stats-row {
