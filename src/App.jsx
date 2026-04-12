@@ -415,30 +415,24 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         tickThink()
       }
 
-      const startFinalDecode = () => {
-        decodeStartRef.current = Date.now()
-
-        const beginStreaming = () => {
-          setPhase('streaming')
-          const interval = 1000 / model.tokPerSec
-          intervalRef.current = setInterval(() => {
-            if (totalIndexRef.current < effectiveOutput) {
-              setDisplayedTokens(prev => [...prev, tokens[totalIndexRef.current]])
-              totalIndexRef.current++
-            } else {
-              clearInterval(intervalRef.current); clearInterval(timerRef.current)
-              if (startTimeRef.current) setElapsedTime(((Date.now() - startTimeRef.current) / 1000).toFixed(1))
-              setPhase('complete'); onComplete(streamIndex)
-            }
-          }, interval)
-        }
-
-        // Final thinking before output (full budget for single-turn, remainder for agent)
-        const thinkAmount = toolSteps.length === 0 ? thinkingBudget : finalThinking
-        doThinking(thinkAmount, beginStreaming)
+      // Stream N tokens of visible output, then call next()
+      const streamChunk = (count, next) => {
+        if (count <= 0) { next(); return }
+        setPhase('streaming')
+        const target = totalIndexRef.current + count
+        const interval = 1000 / model.tokPerSec
+        intervalRef.current = setInterval(() => {
+          if (totalIndexRef.current < target && totalIndexRef.current < effectiveOutput) {
+            setDisplayedTokens(prev => [...prev, tokens[totalIndexRef.current]])
+            totalIndexRef.current++
+          } else {
+            clearInterval(intervalRef.current)
+            next()
+          }
+        }, interval)
       }
 
-      // Prefill then start decode
+      // Prefill then call next()
       const startPrefill = (contextSize, next) => {
         setPhase('prefill')
         setPrefillElapsed(0)
@@ -447,14 +441,31 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         animateBar(setPrefillElapsed, prefillMs, next)
       }
 
+      // Distribute output across tool steps: ~15% per step, remainder at end
+      const numSteps = toolSteps.length
+      const perStepOutput = numSteps > 0 ? Math.floor(effectiveOutput * 0.15 / numSteps) : 0
+      const finalOutput = effectiveOutput - (perStepOutput * numSteps)
+
       // Track tokens added in previous step for incremental prefill
       let lastStepTokens = 0
 
       // Run tool step i, then continue
       const runToolStep = (i) => {
-        if (i >= toolSteps.length) {
-          // All tool calls done — final prefill is just the last tool result (already cached)
-          startPrefill(lastStepTokens, startFinalDecode)
+        if (i >= numSteps) {
+          // All tool calls done — final prefill + thinking + remaining output
+          const doFinal = () => {
+            if (!decodeStartRef.current) decodeStartRef.current = Date.now()
+            const thinkAmount = numSteps === 0 ? thinkingBudget : finalThinking
+            doThinking(thinkAmount, () => {
+              streamChunk(finalOutput, () => {
+                clearInterval(timerRef.current)
+                if (startTimeRef.current) setElapsedTime(((Date.now() - startTimeRef.current) / 1000).toFixed(1))
+                setPhase('complete'); onComplete(streamIndex)
+              })
+            })
+          }
+          if (lastStepTokens > 0) startPrefill(lastStepTokens, doFinal)
+          else doFinal()
           return
         }
 
@@ -462,37 +473,41 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         setCurrentToolIdx(i)
 
         // First call: full context prefill. Subsequent: only new tokens since last call.
-        const prefillSize = i === 0
+        const prefillCtx = i === 0
           ? SYSTEM_TOKENS + promptTokens + toolResultsRef.current
           : lastStepTokens
 
-        // Prefill → think → tool-call decode → tool exec → next
-        startPrefill(prefillSize, () => {
+        // Prefill → think → tool-call decode → tool exec → stream output chunk → next
+        startPrefill(prefillCtx, () => {
           const stepThink = thinkingBudget > 0 ? (step.thinkTokens || 0) : 0
           doThinking(stepThink, () => {
-            setPhase('tool-decode')
-            const decodeMs = (step.decodeTokens / model.tokPerSec) * 1000
-            timeoutRef.current = setTimeout(() => {
-              setPhase('tool-exec')
-              const logEntries = step.parallel
-                ? step.parallel.map(l => ({ label: l, tokens: 0 }))
-                : [{ label: step.label, tokens: step.resultTokens }]
-              if (step.parallel) {
-                logEntries[logEntries.length - 1].tokens = step.resultTokens
-              }
-              setToolLog(prev => [...prev, ...logEntries.map((e, idx) => ({
-                ...e,
-                tokens: step.parallel ? Math.round(step.resultTokens / step.parallel.length) : step.resultTokens,
-                parallel: step.parallel && idx > 0,
-              }))])
+            // Stream a chunk of output (analysis/explanation before the tool call)
+            if (!decodeStartRef.current) decodeStartRef.current = Date.now()
+            streamChunk(perStepOutput, () => {
+              setPhase('tool-decode')
+              const decodeMs = (step.decodeTokens / model.tokPerSec) * 1000
               timeoutRef.current = setTimeout(() => {
-                const added = step.resultTokens + step.decodeTokens + stepThink
-                toolResultsRef.current += added
-                lastStepTokens = added
-                setToolResultTokens(toolResultsRef.current)
-                runToolStep(i + 1)
-              }, step.execMs)
-            }, decodeMs)
+                setPhase('tool-exec')
+                const logEntries = step.parallel
+                  ? step.parallel.map(l => ({ label: l, tokens: 0 }))
+                  : [{ label: step.label, tokens: step.resultTokens }]
+                if (step.parallel) {
+                  logEntries[logEntries.length - 1].tokens = step.resultTokens
+                }
+                setToolLog(prev => [...prev, ...logEntries.map((e, idx) => ({
+                  ...e,
+                  tokens: step.parallel ? Math.round(step.resultTokens / step.parallel.length) : step.resultTokens,
+                  parallel: step.parallel && idx > 0,
+                }))])
+                timeoutRef.current = setTimeout(() => {
+                  const added = step.resultTokens + step.decodeTokens + stepThink + perStepOutput
+                  toolResultsRef.current += added
+                  lastStepTokens = added
+                  setToolResultTokens(toolResultsRef.current)
+                  runToolStep(i + 1)
+                }, step.execMs)
+              }, decodeMs)
+            })
           })
         })
       }
