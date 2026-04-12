@@ -404,15 +404,14 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       const doThinking = (thinkCount, next) => {
         if (thinkCount <= 0) { next(); return }
         setPhase('thinking')
+        setThinkingTokensGenerated(0)
         const thinkMs = (thinkCount / model.tokPerSec) * 1000
-        setThinkingTokensGenerated(prev => prev) // trigger display
         const thinkStart = Date.now()
         const tickThink = () => {
           const elapsed = Date.now() - thinkStart
-          const generated = Math.min(Math.floor(elapsed / (1000 / model.tokPerSec)), thinkCount)
-          setThinkingTokensGenerated(prev => prev + (generated - (prev - (totalIndexRef.current - generated))))
+          setThinkingTokensGenerated(Math.min(Math.floor((elapsed / thinkMs) * thinkCount), thinkCount))
           if (elapsed < thinkMs) timeoutRef.current = setTimeout(tickThink, 50)
-          else next()
+          else { setThinkingTokensGenerated(thinkCount); next() }
         }
         tickThink()
       }
@@ -652,7 +651,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       )}
 
       {phase === 'thinking' && (
-        <div className="thinking-banner"><span className="thinking-spinner" /><div className="thinking-detail"><span>Thinking</span><span className="thinking-count">{thinkingTokensGenerated.toLocaleString()} / {thinkingBudget.toLocaleString()}</span></div></div>
+        <div className="thinking-banner"><span className="thinking-spinner" /><div className="thinking-detail"><span>Thinking</span><span className="thinking-count">{thinkingTokensGenerated.toLocaleString()} tokens</span></div></div>
       )}
 
       <div ref={contentRef} className="stream-content">
