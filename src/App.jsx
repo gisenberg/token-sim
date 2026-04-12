@@ -275,6 +275,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
   const [elapsedTime, setElapsedTime] = useState(0)
   const [prefillElapsed, setPrefillElapsed] = useState(0)
   const [compactElapsed, setCompactElapsed] = useState(0)
+  const [prefillSize, setPrefillSize] = useState(0)
   const [toolResultTokens, setToolResultTokens] = useState(0)
   const [currentToolIdx, setCurrentToolIdx] = useState(-1)
   const [toolLog, setToolLog] = useState([])
@@ -313,7 +314,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
     if (isReset) {
       clearTimers()
       setDisplayedTokens([]); setPhase('idle'); setThinkingTokensGenerated(0)
-      setElapsedTime(0); setPrefillElapsed(0); setCompactElapsed(0)
+      setElapsedTime(0); setPrefillElapsed(0); setCompactElapsed(0); setPrefillSize(0)
       setToolResultTokens(0); setCurrentToolIdx(-1); setToolLog([])
       totalIndexRef.current = 0; hasStartedRef.current = false
       startTimeRef.current = null; decodeStartRef.current = null; toolResultsRef.current = 0
@@ -399,25 +400,32 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       const startPrefill = (contextSize, next) => {
         setPhase('prefill')
         setPrefillElapsed(0)
+        setPrefillSize(contextSize)
         const prefillMs = (contextSize / model.prefillRate) * 1000
         animateBar(setPrefillElapsed, prefillMs, next)
       }
 
+      // Track tokens added in previous step for incremental prefill
+      let lastStepTokens = 0
+
       // Run tool step i, then continue
       const runToolStep = (i) => {
         if (i >= toolSteps.length) {
-          // All tool calls done — final prefill + decode
-          const finalCtx = SYSTEM_TOKENS + promptTokens + toolResultsRef.current
-          startPrefill(finalCtx, startFinalDecode)
+          // All tool calls done — final prefill is just the last tool result (already cached)
+          startPrefill(lastStepTokens, startFinalDecode)
           return
         }
 
         const step = toolSteps[i]
         setCurrentToolIdx(i)
-        const currentCtx = SYSTEM_TOKENS + promptTokens + toolResultsRef.current
+
+        // First call: full context prefill. Subsequent: only new tokens since last call.
+        const prefillSize = i === 0
+          ? SYSTEM_TOKENS + promptTokens + toolResultsRef.current
+          : lastStepTokens
 
         // Prefill → think → tool-call decode → tool exec → next
-        startPrefill(currentCtx, () => {
+        startPrefill(prefillSize, () => {
           const stepThink = thinkingBudget > 0 ? (step.thinkTokens || 0) : 0
           doThinking(stepThink, () => {
             setPhase('tool-decode')
@@ -436,7 +444,9 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
                 parallel: step.parallel && idx > 0,
               }))])
               timeoutRef.current = setTimeout(() => {
-                toolResultsRef.current += step.resultTokens + step.decodeTokens + stepThink
+                const added = step.resultTokens + step.decodeTokens + stepThink
+                toolResultsRef.current += added
+                lastStepTokens = added
                 setToolResultTokens(toolResultsRef.current)
                 runToolStep(i + 1)
               }, step.execMs)
@@ -584,7 +594,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       )}
 
       {phase === 'prefill' && (
-        <div className="prefill-banner"><div className="prefill-bar"><div className="prefill-bar-fill" style={{ width: `${prefillElapsed * 100}%`, background: model.color }} /></div><span className="prefill-label">Prefilling {(SYSTEM_TOKENS + promptTokens + toolResultTokens).toLocaleString()} tokens @ {model.prefillRate} tok/s</span></div>
+        <div className="prefill-banner"><div className="prefill-bar"><div className="prefill-bar-fill" style={{ width: `${prefillElapsed * 100}%`, background: model.color }} /></div><span className="prefill-label">{toolResultTokens > 0 ? 'Incremental prefill' : 'Prefilling'} {prefillSize.toLocaleString()} tokens @ {model.prefillRate} tok/s — {formatTime(prefillSize / model.prefillRate)}</span></div>
       )}
 
       {(phase === 'tool-decode' || phase === 'tool-exec') && currentStep && (
