@@ -69,6 +69,11 @@ const MODELS = [
   // OpenAI API
   { id: 'cloud-gpt41', name: 'GPT-4.1', quant: '1M context', hardware: 'OpenAI API', tier: 'A', tokPerSec: 100, prefillRate: 30000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'good', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#4f46e5', hwColor: '#818cf8' },
   { id: 'cloud-o3mini', name: 'o3-mini (high)', quant: '200K context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 152, prefillRate: 30000, weightGB: 0, kvPerTokKB: 0, maxCtx: '200K', quality: 'frontier', thinking: true, thinkingBudget: 8000, outputMul: 1, color: '#4f46e5', hwColor: '#818cf8' },
+  { id: 'cloud-gpt53-codex', name: 'GPT-5.3 Codex', quant: '400K context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 71, prefillRate: 20000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'frontier', thinking: true, thinkingBudget: 8000, outputMul: 1, color: '#4f46e5', hwColor: '#818cf8' },
+  { id: 'cloud-gpt54', name: 'GPT-5.4', quant: '1M context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 83, prefillRate: 25000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 6000, outputMul: 1, color: '#4f46e5', hwColor: '#818cf8' },
+  { id: 'cloud-gpt54-mini', name: 'GPT-5.4 mini', quant: '400K context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 168, prefillRate: 40000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'frontier', thinking: true, thinkingBudget: 4000, outputMul: 1, color: '#4f46e5', hwColor: '#818cf8' },
+  { id: 'cloud-gpt54-nano', name: 'GPT-5.4 nano', quant: '400K context', hardware: 'OpenAI API', tier: 'A', tokPerSec: 184, prefillRate: 50000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'good', thinking: true, thinkingBudget: 2000, outputMul: 1, color: '#4f46e5', hwColor: '#818cf8' },
+  { id: 'cloud-gpt51-codex-mini', name: 'GPT-5.1 Codex mini', quant: '400K context', hardware: 'OpenAI API', tier: 'A', tokPerSec: 185, prefillRate: 45000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'good', thinking: true, thinkingBudget: 4000, outputMul: 1, color: '#4f46e5', hwColor: '#818cf8' },
 ]
 
 // ── Experiment Presets ──
@@ -86,8 +91,10 @@ const EXPERIMENTS = [
   // Cloud API
   { id: 'anthropic-lineup', category: 'cloud', name: 'Anthropic Lineup', desc: 'Opus 4.6 vs Sonnet 4.6 vs Haiku 4.5', columns: 2, models: ['cloud-opus46-1m','cloud-opus46-fast','cloud-sonnet46','cloud-haiku45'] },
   { id: 'google-lineup', category: 'cloud', name: 'Google Lineup', desc: 'Gemini 3.1 Pro vs 2.5 Pro vs 2.5 Flash', columns: 3, models: ['cloud-gemini31pro','cloud-gemini25pro','cloud-gemini25flash'] },
-  { id: 'cloud-all', category: 'cloud', name: 'All Cloud Models', desc: 'Every cloud API model side by side', columns: 3, models: ['cloud-opus46-1m','cloud-sonnet46','cloud-haiku45','cloud-gemini31pro','cloud-gemini25flash','cloud-o3mini'] },
-  { id: 'frontier-thinking', category: 'cloud', name: 'Frontier Thinking', desc: 'Opus vs Gemini Pro vs o3 — thinking overhead', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-o3mini'] },
+  { id: 'openai-lineup', category: 'cloud', name: 'OpenAI Lineup', desc: 'GPT-5.4 family + Codex models', columns: 3, models: ['cloud-gpt54','cloud-gpt54-mini','cloud-gpt54-nano','cloud-gpt53-codex','cloud-gpt51-codex-mini','cloud-o3mini'] },
+  { id: 'cloud-all', category: 'cloud', name: 'Cloud Frontier', desc: 'Top model from each provider', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-gpt54','cloud-sonnet46','cloud-gemini25flash','cloud-gpt54-mini'] },
+  { id: 'frontier-thinking', category: 'cloud', name: 'Frontier Thinking', desc: 'Opus vs Gemini Pro vs GPT-5.4 — thinking overhead', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-gpt54'] },
+  { id: 'cloud-speed', category: 'cloud', name: 'Cloud Speed Demons', desc: 'Fastest output from each provider', columns: 3, models: ['cloud-haiku45','cloud-gemini25flash','cloud-gpt54-nano'] },
   // Cloud vs Local
   { id: 'cloud-vs-5090', category: 'cloud-vs-local', name: 'Cloud vs RTX 5090', desc: 'API models vs the fastest local GPU', columns: 3, models: ['cloud-opus46-fast','cloud-sonnet46','cloud-gemini25flash','5090-gemma26b-q6','5090-gemma26b-q4','5090-qwen35b-a3b'] },
   { id: 'cloud-vs-spark', category: 'cloud-vs-local', name: 'Cloud vs DGX Spark', desc: 'API models vs 122B local models', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-o3mini','spark-qwen122b-ik','spark-qwen3-coder','spark-glm45'] },
@@ -601,7 +608,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         </div>
       </div>
 
-      {hwTotal > 0 ? (
+      {hwTotal > 0 && (
         <div className="vram-row">
           <div
             className={`vram-donut ${vramOverflow ? 'vram-overflow' : ''}`}
@@ -614,14 +621,6 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
               <span className="vram-item"><span className="vram-dot" style={{ background: '#f59e0b' }} />KV {kvGB.toFixed(1)}</span>
               <span className="vram-item vram-free">{Math.max(0, hwTotal - totalVram).toFixed(1)} free</span>
             </span>
-          </div>
-        </div>
-      ) : (
-        <div className="vram-row">
-          <div className="cloud-badge">Cloud</div>
-          <div className="vram-text">
-            <span className="vram-total">{model.maxCtx} context window</span>
-            <span className="vram-detail"><span className="vram-item">No local memory constraints</span></span>
           </div>
         </div>
       )}
