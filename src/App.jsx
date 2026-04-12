@@ -580,7 +580,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         <span className="hw-badge" style={{ color: model.hwColor }}>{model.hardware}</span>
         <span className="hw-spec">{model.tokPerSec} tok/s</span>
         <span className="hw-spec">{model.maxCtx} ctx</span>
-        <span className="hw-spec">{model.quality} pass</span>
+        <span className="hw-spec">{model.quality}</span>
       </div>
 
       <div className="ctx-bar-wrapper">
