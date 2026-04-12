@@ -747,6 +747,10 @@ function App() {
           <div className="header-top">
             <h1>Token Speed Simulator</h1>
             <a className="repo-link" href="https://github.com/gisenberg/local-model-eval" target="_blank" rel="noopener noreferrer">local-model-eval</a>
+            <div className="header-actions">
+              <button onClick={handleStart} disabled={controlsDisabled} className="btn-start">{controlsDisabled ? 'Running...' : 'Start'}</button>
+              <button onClick={handleReset} className="btn-reset">Stop</button>
+            </div>
           </div>
           <p>{experiment.desc}</p>
         </header>
@@ -772,10 +776,6 @@ function App() {
               {TOOL_PRESETS.map((p, i) => <option key={i} value={i}>{p.label}</option>)}
             </select>
             <div className="prompt-desc">{TOOL_PRESETS[toolPresetIdx].desc}</div>
-          </div>
-          <div className="button-group">
-            <button onClick={handleStart} disabled={controlsDisabled} className="btn-start">{controlsDisabled ? 'Running...' : 'Start'}</button>
-            <button onClick={handleReset} className="btn-reset">Stop</button>
           </div>
         </div>
 
