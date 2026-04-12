@@ -505,8 +505,8 @@ function App() {
   const [activeExperiment, setActiveExperiment] = useState('5090-best')
   const [isRunning, setIsRunning] = useState(false)
   const [isReset, setIsReset] = useState(false)
-  const [tokenCount, setTokenCount] = useState(1500)
-  const [promptTokens, setPromptTokens] = useState(2000)
+  const [tokenCount, setTokenCount] = useState(4000)
+  const [promptTokens, setPromptTokens] = useState(24000)
   const [completedStreams, setCompletedStreams] = useState(new Set())
 
   const experiment = EXPERIMENTS.find(e => e.id === activeExperiment)
