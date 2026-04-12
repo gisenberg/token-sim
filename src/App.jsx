@@ -93,8 +93,7 @@ const EXPERIMENTS = [
   { id: 'google-lineup', category: 'cloud', name: 'Google Lineup', desc: 'Gemini 3.1 Pro vs 3 Flash vs 2.5 Pro', columns: 3, models: ['cloud-gemini31pro','cloud-gemini3flash','cloud-gemini25pro'] },
   { id: 'openai-lineup', category: 'cloud', name: 'OpenAI Lineup', desc: 'GPT-5.4 family + Codex models', columns: 3, models: ['cloud-gpt54','cloud-gpt54-mini','cloud-gpt54-nano','cloud-gpt53-codex','cloud-gpt51-codex-mini','cloud-o3mini'] },
   { id: 'cloud-all', category: 'cloud', name: 'Cloud Frontier', desc: 'Top model from each provider', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-gpt54','cloud-sonnet46','cloud-gemini3flash','cloud-gpt54-mini'] },
-  { id: 'frontier-thinking', category: 'cloud', name: 'Frontier Thinking', desc: 'Opus vs Gemini Pro vs GPT-5.4 — thinking overhead', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-gpt54'] },
-  { id: 'cloud-speed', category: 'cloud', name: 'Cloud Speed Demons', desc: 'Fastest output from each provider', columns: 3, models: ['cloud-haiku45','cloud-gemini3flash','cloud-gpt54-nano'] },
+{ id: 'cloud-speed', category: 'cloud', name: 'Cloud Speed Demons', desc: 'Fastest output from each provider', columns: 3, models: ['cloud-haiku45','cloud-gemini3flash','cloud-gpt54-nano'] },
   // Cloud vs Local
   { id: 'cloud-vs-5090', category: 'cloud-vs-local', name: 'Cloud vs RTX 5090', desc: 'API models vs the fastest local GPU', columns: 3, models: ['cloud-opus46-fast','cloud-sonnet46','cloud-gemini3flash','5090-gemma26b-q6','5090-gemma26b-q4','5090-qwen35b-a3b'] },
   { id: 'cloud-vs-spark', category: 'cloud-vs-local', name: 'Cloud vs DGX Spark', desc: 'API models vs 122B local models', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-o3mini','spark-qwen122b-ik','spark-qwen3-coder','spark-glm45'] },
