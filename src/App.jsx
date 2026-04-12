@@ -25,8 +25,8 @@ const MODELS = [
   { id: '5090-gemma26b-q4', name: 'Gemma 4 26B-A4B', quant: 'Q4_K_M', hardware: 'RTX 5090', tier: 'A', tokPerSec: 150, prefillRate: 3000, weightGB: 19.4, kvPerTokKB: 5.3, maxCtx: '262K', quality: '16/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#f87171', hwColor: '#86efac' },
   // harmonic27b q4km: 19,995 MB measured. Qwen 27B arch, ~50 KB/tok turbo4
   { id: '5090-harmonic27b', name: 'Harmonic 27B', quant: 'Q4_K_M', hardware: 'RTX 5090', tier: 'A', tokPerSec: 61, prefillRate: 1800, weightGB: 18.0, kvPerTokKB: 50, maxCtx: '262K', quality: '31/31', thinking: true, thinkingBudget: 16384, outputMul: 1, color: '#f87171', hwColor: '#86efac' },
-  // qwopus27b q6k: 24,549 MB measured. Qwen 27B arch, ~50 KB/tok turbo4
-  { id: '5090-qwopus27b', name: 'Qwopus 3.5 27B-v3', quant: 'Q6_K', hardware: 'RTX 5090', tier: 'A', tokPerSec: 50, prefillRate: 1800, weightGB: 22.9, kvPerTokKB: 50, maxCtx: '196K', quality: '16/17', thinking: false, thinkingBudget: 0, outputMul: 2.5, color: '#f87171', hwColor: '#86efac' },
+  // qwopus27b q6k: 27,912 MB @ 196K measured. DeltaNet hybrid (16/32 attn layers), 17 KB/tok turbo4
+  { id: '5090-qwopus27b', name: 'Qwopus 3.5 27B-v3', quant: 'Q6_K', hardware: 'RTX 5090', tier: 'A', tokPerSec: 50, prefillRate: 1800, weightGB: 24.7, kvPerTokKB: 17, maxCtx: '262K', quality: '16/17', thinking: false, thinkingBudget: 0, outputMul: 2.5, color: '#f87171', hwColor: '#86efac' },
   // gemma31b-opus: 23,199 MB measured @ 32K. Same arch as gemma31b, ~13 KB/tok turbo4
   { id: '5090-gemma31b-opus', name: 'Gemma 31B Opus-Dist.', quant: 'Q4_K_M', hardware: 'RTX 5090', tier: 'B', tokPerSec: 51, prefillRate: 2000, weightGB: 22.3, kvPerTokKB: 13, maxCtx: '262K', quality: '16/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#f87171', hwColor: '#86efac' },
   // qwen35b-a3b: 23,910 MB measured. DeltaNet hybrid, ~5 KB/tok turbo4
