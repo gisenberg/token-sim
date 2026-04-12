@@ -681,7 +681,10 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       let lastStepTokens = 0
 
       // Run subagent waves sequentially, then call next()
-      const waves = subagentWaves ?? []
+      // Subagents only run on cloud (concurrent API). Local hardware has a single
+      // inference slot — subagents would serialize and defeat the purpose.
+      const isCloud = HW_MEM[model.hardware] === 0
+      const waves = isCloud ? (subagentWaves ?? []) : []
       const runSubagentWave = (waveIdx, next) => {
         if (waveIdx >= waves.length) { setActiveSubagents(0); setSubagentWaveIdx(-1); next(); return }
         const wave = waves[waveIdx]
@@ -1265,7 +1268,15 @@ function App() {
     if (!costSeriesRef.current[key]) costSeriesRef.current[key] = []
     const pts = costSeriesRef.current[key]
     if (pts.length === 0 || t - pts[pts.length - 1].t >= 0.2) {
-      pts.push({ t, ...metrics })
+      // Ensure monotonic: never record a value lower than the previous point
+      const prev = pts[pts.length - 1]
+      const point = { t, ...metrics }
+      if (prev) {
+        if (point.cost < prev.cost) point.cost = prev.cost
+        if (point.input < prev.input) point.input = prev.input
+        if (point.output < prev.output) point.output = prev.output
+      }
+      pts.push(point)
       if (pts.length % 2 === 0) setCostSeries({ ...costSeriesRef.current })
     }
   }, [])
