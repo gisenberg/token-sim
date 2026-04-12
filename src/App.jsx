@@ -419,6 +419,13 @@ const flattenSteps = (steps) => {
 
 const TIER_COLORS = { S: '#fbbf24', A: '#34d399', B: '#60a5fa', C: '#a78bfa', D: '#f87171', F: '#6b7280' }
 const formatTime = (s) => s < 1 ? `${Math.round(s * 1000)}ms` : s < 10 ? `${s.toFixed(1)}s` : `${Math.round(s)}s`
+const formatTokens = (n) => {
+  if (n >= 1e12) return (n / 1e12).toFixed(1) + 'T'
+  if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B'
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M'
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K'
+  return String(n)
+}
 
 // ── TokenStream Component ──
 const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptTokens, toolSteps, timeScale, loopEnabled, onLoopComplete, onComplete, streamIndex }) => {
@@ -435,6 +442,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
   const [loopCount, setLoopCount] = useState(0)
   const [cumulativeIn, setCumulativeIn] = useState(0)
   const [cumulativeOut, setCumulativeOut] = useState(0)
+  const [cumulativeCost, setCumulativeCost] = useState(0)
   const [generation, setGeneration] = useState(0) // bumped to trigger re-run
   const intervalRef = useRef(null)
   const timerRef = useRef(null)
@@ -487,7 +495,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       setDisplayedTokens([]); setPhase('idle'); setThinkingTokensGenerated(0)
       setElapsedTime(0); setPrefillElapsed(0); setCompactElapsed(0); setPrefillSize(0)
       setToolResultTokens(0); setCurrentToolIdx(-1); setToolLog([])
-      setLoopCount(0); setCumulativeIn(0); setCumulativeOut(0); setGeneration(0)
+      setLoopCount(0); setCumulativeIn(0); setCumulativeOut(0); setCumulativeCost(0); setGeneration(0)
       streamAccCtxRef.current = 0
       totalIndexRef.current = 0; hasStartedRef.current = false
       startTimeRef.current = null; decodeStartRef.current = null; toolResultsRef.current = 0
@@ -614,10 +622,19 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
                 if (loopEnabled) {
                   const toolTok = toolSteps.reduce((s, t) => s + (t.resultTokens ?? 0) + (t.decodeTokens ?? 0) + (t.thinkTokens ?? 0), 0)
                   const inTok = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current + toolTok
-                  const outTok = effectiveOutput + thinkingBudget
+                  const outTok = effectiveOutput + thinkingBudget + toolSteps.reduce((s, t) => s + (t.decodeTokens ?? 0) + (t.thinkTokens ?? 0), 0)
                   setCumulativeIn(prev => prev + inTok)
                   setCumulativeOut(prev => prev + outTok)
                   setLoopCount(prev => prev + 1)
+                  // Accumulate cost for cloud models
+                  if (model.costIn != null) {
+                    const threshold = model.costInThreshold ?? Infinity
+                    const maxCtxTok = parseInt(model.maxCtx) * 1000
+                    const useHigh = maxCtxTok > threshold
+                    const inRate = useHigh && model.costInHigh ? model.costInHigh : model.costIn
+                    const outRate = useHigh && model.costOutHigh ? model.costOutHigh : model.costOut
+                    setCumulativeCost(prev => prev + (inTok / 1e6) * inRate + (outTok / 1e6) * outRate)
+                  }
 
                   // Accumulate context for next loop; compact if >80% of max ctx
                   const turnTokens = outTok + toolTok
@@ -799,26 +816,21 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       </div>
 
       {hwTotal === 0 && model.costIn != null && (() => {
-        const totalInput = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current + toolResultTokens + toolSteps.reduce((s, t) => s + (t.resultTokens ?? 0), 0)
-        const outputTokens = effectiveOutput + thinkingBudget
-        const totalToolDecodeTokens = toolSteps.reduce((s, t) => s + (t.decodeTokens ?? 0) + (t.thinkTokens ?? 0), 0)
-        // Tiered pricing based on context window size, not input tokens
-        // (e.g. GPT-5.4: $2.50/$15 at 272K window, $5/$22.50 at 1M window)
-        const threshold = model.costInThreshold || Infinity
-        const maxCtxTokens = parseInt(model.maxCtx) * 1000
+        const runInput = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current + toolResultTokens + toolSteps.reduce((s, t) => s + (t.resultTokens ?? 0), 0)
+        const runOutput = effectiveOutput + thinkingBudget + toolSteps.reduce((s, t) => s + (t.decodeTokens ?? 0) + (t.thinkTokens ?? 0), 0)
+        const threshold = model.costInThreshold ?? Infinity
         const useHighTier = maxCtxTokens > threshold
         const inRate = useHighTier && model.costInHigh ? model.costInHigh : model.costIn
         const outRate = useHighTier && model.costOutHigh ? model.costOutHigh : model.costOut
-        const costInput = (totalInput / 1e6) * inRate
-        const costOutput = ((outputTokens + totalToolDecodeTokens) / 1e6) * outRate
-        const costTotal = costInput + costOutput
+        const runCost = (runInput / 1e6) * inRate + (runOutput / 1e6) * outRate
+        const totalCost = cumulativeCost + runCost
         const rateLabel = `$${inRate}/$${outRate} per 1M`
         return (
           <div className="cost-row">
-            <div className="cost-total">${costTotal < 0.01 ? costTotal.toFixed(4) : costTotal.toFixed(2)}</div>
+            <div className="cost-total">${totalCost < 0.01 ? totalCost.toFixed(4) : totalCost.toFixed(2)}</div>
             <div className="cost-detail">
               <span className="cost-item">{rateLabel}</span>
-              <span className="cost-item cost-breakdown">in ${costInput.toFixed(3)} + out ${costOutput.toFixed(3)}</span>
+              <span className="cost-item cost-breakdown">{loopCount > 0 ? `${loopCount} prior + ` : ''}this run $${runCost < 0.01 ? runCost.toFixed(4) : runCost.toFixed(3)}</span>
             </div>
           </div>
         )
@@ -847,7 +859,8 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         <div className="stat"><span className="stat-label">Thinking</span><span className={`stat-value ${!model.thinking ? 'stat-dim' : ''}`}>{thinkingLabel}</span></div>
         <div className="stat"><span className="stat-label">Time</span><span className="stat-value">{elapsedTime}s</span></div>
         {rate && <div className="stat"><span className="stat-label">Actual</span><span className="stat-value">{rate} tok/s</span></div>}
-        {loopCount > 0 && <div className="stat"><span className="stat-label">Total ({loopCount} runs)</span><span className="stat-value">{(cumulativeIn / 1000).toFixed(0)}K in / {(cumulativeOut / 1000).toFixed(0)}K out</span></div>}
+        {loopCount > 0 && <div className="stat"><span className="stat-label">Total ({loopCount} runs)</span><span className="stat-value">{formatTokens(cumulativeIn)} in / {formatTokens(cumulativeOut)} out{cumulativeCost > 0 ? ` / $${cumulativeCost.toFixed(2)}` : ''}</span></div>}
+        {streamAccCtxRef.current > 0 && <div className="stat"><span className="stat-label">Ctx history</span><span className="stat-value">+{formatTokens(streamAccCtxRef.current)}</span></div>}
       </div>
 
       <div className="progress-track"><div className="progress-fill" style={{ width: `${totalProgress}%`, background: model.color }} /></div>
