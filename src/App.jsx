@@ -527,7 +527,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       // Thinking: distributed across tool steps + final output
       // Total thinking per tool step is step.thinkTokens (short reasoning per call)
       // Remaining thinking budget goes to the final output synthesis
-      const totalStepThinking = toolSteps.reduce((s, t) => s + (t.thinkTokens || 0), 0)
+      const totalStepThinking = toolSteps.reduce((s, t) => s + (t.thinkTokens ?? 0), 0)
       const finalThinking = thinkingBudget > 0
         ? Math.max(0, thinkingBudget - (toolSteps.length > 0 ? totalStepThinking : 0))
         : 0
@@ -612,7 +612,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
 
                 // Per-stream loop: accumulate tallies, grow context, restart
                 if (loopEnabled) {
-                  const toolTok = toolSteps.reduce((s, t) => s + (t.resultTokens || 0) + (t.decodeTokens || 0) + (t.thinkTokens || 0), 0)
+                  const toolTok = toolSteps.reduce((s, t) => s + (t.resultTokens ?? 0) + (t.decodeTokens ?? 0) + (t.thinkTokens ?? 0), 0)
                   const inTok = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current + toolTok
                   const outTok = effectiveOutput + thinkingBudget
                   setCumulativeIn(prev => prev + inTok)
@@ -654,7 +654,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
 
         // Prefill → think → tool-call decode → tool exec → stream output chunk → next
         startPrefill(prefillCtx, () => {
-          const stepThink = thinkingBudget > 0 ? (step.thinkTokens || 0) : 0
+          const stepThink = thinkingBudget > 0 ? (step.thinkTokens ?? 0) : 0
           doThinking(stepThink, () => {
             // Stream a chunk of output (analysis/explanation before the tool call)
             if (!decodeStartRef.current) decodeStartRef.current = Date.now()
@@ -799,9 +799,9 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       </div>
 
       {hwTotal === 0 && model.costIn != null && (() => {
-        const totalInput = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current + toolResultTokens + toolSteps.reduce((s, t) => s + (t.resultTokens || 0), 0)
+        const totalInput = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current + toolResultTokens + toolSteps.reduce((s, t) => s + (t.resultTokens ?? 0), 0)
         const outputTokens = effectiveOutput + thinkingBudget
-        const totalToolDecodeTokens = toolSteps.reduce((s, t) => s + (t.decodeTokens || 0) + (t.thinkTokens || 0), 0)
+        const totalToolDecodeTokens = toolSteps.reduce((s, t) => s + (t.decodeTokens ?? 0) + (t.thinkTokens ?? 0), 0)
         // Tiered pricing based on context window size, not input tokens
         // (e.g. GPT-5.4: $2.50/$15 at 272K window, $5/$22.50 at 1M window)
         const threshold = model.costInThreshold || Infinity
