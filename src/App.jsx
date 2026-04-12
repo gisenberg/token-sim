@@ -6,12 +6,15 @@ const CITATIONS = {
   'RTX 5090': 'https://github.com/gisenberg/local-model-eval/blob/main/results/MODEL_RANKINGS_5090.md',
   'M4 Max': 'https://github.com/gisenberg/local-model-eval/blob/main/results/MODEL_RANKINGS_M4MAX.md',
   'DGX Spark': 'https://github.com/gisenberg/local-model-eval/blob/main/results/MODEL_RANKINGS_SPARK.md',
+  'Anthropic API': 'https://artificialanalysis.ai/providers/anthropic',
+  'Google API': 'https://artificialanalysis.ai/providers/google',
+  'OpenAI API': 'https://artificialanalysis.ai/providers/openai',
 }
 
 // weightGB: base VRAM (weights + compute buffers, no KV). Derived from measured VRAM@32K minus KV@32K.
 // kvPerTokKB: incremental KV per token. Measured from context-size deltas where available.
 // 5090 values: measured via turbo4 experiments. M4/Spark: estimated from weight sizes + arch.
-const HW_MEM = { 'RTX 5090': 32, 'M4 Max': 30, 'DGX Spark': 120 }
+const HW_MEM = { 'RTX 5090': 32, 'M4 Max': 30, 'DGX Spark': 120, 'Anthropic API': 0, 'Google API': 0, 'OpenAI API': 0 }
 
 const MODELS = [
   // RTX 5090 — measured VRAM from experiments/**/all_results.json (turbo4 KV @ 32K)
@@ -54,11 +57,25 @@ const MODELS = [
   { id: 'spark-minimax', name: 'MiniMax-M2.5', quant: 'UD-Q3_K_XL', hardware: 'DGX Spark', tier: 'C', tokPerSec: 30, prefillRate: 400, weightGB: 98, kvPerTokKB: 20, maxCtx: '32K', quality: '5/15', thinking: true, thinkingBudget: 16384, outputMul: 1, color: '#a78bfa', hwColor: '#c4b5fd' },
   { id: 'spark-mistral119b', name: 'Mistral-Small-4 119B', quant: 'Q4_K_M', hardware: 'DGX Spark', tier: 'D', tokPerSec: 9, prefillRate: 350, weightGB: 71, kvPerTokKB: 24, maxCtx: '32K', quality: '7/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#a78bfa', hwColor: '#c4b5fd' },
   { id: 'spark-gemma31b-dense', name: 'Gemma 4 31B-IT', quant: 'Q8_0 (dense)', hardware: 'DGX Spark', tier: 'F', tokPerSec: 7, prefillRate: 250, weightGB: 33, kvPerTokKB: 47, maxCtx: '262K', quality: 'N/A', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#a78bfa', hwColor: '#c4b5fd' },
+  // Anthropic API — speeds from Artificial Analysis, TTFT-derived prefill rates
+  { id: 'cloud-opus46-1m', name: 'Claude Opus 4.6', quant: '1M context', hardware: 'Anthropic API', tier: 'S', tokPerSec: 48, prefillRate: 15000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 8000, outputMul: 1, color: '#d97706', hwColor: '#fbbf24' },
+  { id: 'cloud-opus46-fast', name: 'Claude Opus 4.6 Fast', quant: '1M context', hardware: 'Anthropic API', tier: 'S', tokPerSec: 120, prefillRate: 15000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 4000, outputMul: 1, color: '#d97706', hwColor: '#fbbf24' },
+  { id: 'cloud-sonnet46', name: 'Claude Sonnet 4.6', quant: '200K context', hardware: 'Anthropic API', tier: 'S', tokPerSec: 66, prefillRate: 25000, weightGB: 0, kvPerTokKB: 0, maxCtx: '200K', quality: 'frontier', thinking: true, thinkingBudget: 4000, outputMul: 1, color: '#d97706', hwColor: '#fbbf24' },
+  { id: 'cloud-haiku45', name: 'Claude Haiku 4.5', quant: '200K context', hardware: 'Anthropic API', tier: 'A', tokPerSec: 92, prefillRate: 60000, weightGB: 0, kvPerTokKB: 0, maxCtx: '200K', quality: 'good', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#d97706', hwColor: '#fbbf24' },
+  // Google API
+  { id: 'cloud-gemini31pro', name: 'Gemini 3.1 Pro', quant: '1M context', hardware: 'Google API', tier: 'S', tokPerSec: 126, prefillRate: 20000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 4000, outputMul: 1, color: '#059669', hwColor: '#34d399' },
+  { id: 'cloud-gemini25pro', name: 'Gemini 2.5 Pro', quant: '1M context', hardware: 'Google API', tier: 'S', tokPerSec: 122, prefillRate: 20000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 4000, outputMul: 1, color: '#059669', hwColor: '#34d399' },
+  { id: 'cloud-gemini25flash', name: 'Gemini 2.5 Flash', quant: '1M context', hardware: 'Google API', tier: 'A', tokPerSec: 192, prefillRate: 80000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'good', thinking: true, thinkingBudget: 2000, outputMul: 1, color: '#059669', hwColor: '#34d399' },
+  // OpenAI API
+  { id: 'cloud-gpt41', name: 'GPT-4.1', quant: '1M context', hardware: 'OpenAI API', tier: 'A', tokPerSec: 100, prefillRate: 30000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'good', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#4f46e5', hwColor: '#818cf8' },
+  { id: 'cloud-o3mini', name: 'o3-mini (high)', quant: '200K context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 152, prefillRate: 30000, weightGB: 0, kvPerTokKB: 0, maxCtx: '200K', quality: 'frontier', thinking: true, thinkingBudget: 8000, outputMul: 1, color: '#4f46e5', hwColor: '#818cf8' },
 ]
 
 // ── Experiment Presets ──
 const EXPERIMENT_CATEGORIES = [
-  { id: 'platform', label: 'Platform Shootouts' },
+  { id: 'cloud', label: 'Cloud API' },
+  { id: 'cloud-vs-local', label: 'Cloud vs Local' },
+  { id: 'platform', label: 'Local Platforms' },
   { id: 'cross-platform', label: 'Cross-Platform' },
   { id: 'architecture', label: 'Architecture' },
   { id: 'quality-speed', label: 'Quality vs Speed' },
@@ -66,6 +83,16 @@ const EXPERIMENT_CATEGORIES = [
 ]
 
 const EXPERIMENTS = [
+  // Cloud API
+  { id: 'anthropic-lineup', category: 'cloud', name: 'Anthropic Lineup', desc: 'Opus 4.6 vs Sonnet 4.6 vs Haiku 4.5', columns: 2, models: ['cloud-opus46-1m','cloud-opus46-fast','cloud-sonnet46','cloud-haiku45'] },
+  { id: 'google-lineup', category: 'cloud', name: 'Google Lineup', desc: 'Gemini 3.1 Pro vs 2.5 Pro vs 2.5 Flash', columns: 3, models: ['cloud-gemini31pro','cloud-gemini25pro','cloud-gemini25flash'] },
+  { id: 'cloud-all', category: 'cloud', name: 'All Cloud Models', desc: 'Every cloud API model side by side', columns: 3, models: ['cloud-opus46-1m','cloud-sonnet46','cloud-haiku45','cloud-gemini31pro','cloud-gemini25flash','cloud-o3mini'] },
+  { id: 'frontier-thinking', category: 'cloud', name: 'Frontier Thinking', desc: 'Opus vs Gemini Pro vs o3 — thinking overhead', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-o3mini'] },
+  // Cloud vs Local
+  { id: 'cloud-vs-5090', category: 'cloud-vs-local', name: 'Cloud vs RTX 5090', desc: 'API models vs the fastest local GPU', columns: 3, models: ['cloud-opus46-fast','cloud-sonnet46','cloud-gemini25flash','5090-gemma26b-q6','5090-gemma26b-q4','5090-qwen35b-a3b'] },
+  { id: 'cloud-vs-spark', category: 'cloud-vs-local', name: 'Cloud vs DGX Spark', desc: 'API models vs 122B local models', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-o3mini','spark-qwen122b-ik','spark-qwen3-coder','spark-glm45'] },
+  { id: 'cloud-vs-m4', category: 'cloud-vs-local', name: 'Cloud vs M4 Max', desc: 'API models vs portable local inference', columns: 3, models: ['cloud-sonnet46','cloud-haiku45','cloud-gemini25flash','m4-gemma26b-q6','m4-gemma31b','m4-qwen9b'] },
+  // Local platforms
   { id: '5090-best', category: 'platform', name: '5090 Best 6', desc: 'Top models on RTX 5090', columns: 3, models: ['5090-gemma26b-q6','5090-gemma31b','5090-qwen27b-opus','5090-gemma26b-q4','5090-harmonic27b','5090-qwopus27b'] },
   { id: 'm4-best', category: 'platform', name: 'M4 Max Best 6', desc: 'Top models on M4 Max — bandwidth-limited', columns: 3, models: ['m4-gemma31b','m4-gemma26b-q6','m4-qwen27b-mlx','m4-qwen27b-opus','m4-gemma26b-q4','m4-qwen9b'] },
   { id: 'spark-best', category: 'platform', name: 'Spark Best 6', desc: '128GB unlocks 100B+ models', columns: 3, models: ['spark-qwen122b-ik','spark-qwen122b-unsloth','spark-glm45','spark-qwen122b-reap','spark-qwen122b-mainline','spark-qwen3-coder'] },
@@ -574,20 +601,30 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         </div>
       </div>
 
-      <div className="vram-row">
-        <div
-          className={`vram-donut ${vramOverflow ? 'vram-overflow' : ''}`}
-          style={{ background: `conic-gradient(#60a5fa 0deg ${weightDeg}deg, #f59e0b ${weightDeg}deg ${weightDeg + kvDeg}deg, var(--border) ${weightDeg + kvDeg}deg 360deg)` }}
-        ><div className="vram-donut-hole" /></div>
-        <div className="vram-text">
-          <span className="vram-total">{totalVram.toFixed(1)} / {hwTotal} GB{vramOverflow ? ' !' : ''}</span>
-          <span className="vram-detail">
-            <span className="vram-item"><span className="vram-dot" style={{ background: '#60a5fa' }} />Weights {model.weightGB.toFixed(1)}</span>
-            <span className="vram-item"><span className="vram-dot" style={{ background: '#f59e0b' }} />KV {kvGB.toFixed(1)}</span>
-            <span className="vram-item vram-free">{Math.max(0, hwTotal - totalVram).toFixed(1)} free</span>
-          </span>
+      {hwTotal > 0 ? (
+        <div className="vram-row">
+          <div
+            className={`vram-donut ${vramOverflow ? 'vram-overflow' : ''}`}
+            style={{ background: `conic-gradient(#60a5fa 0deg ${weightDeg}deg, #f59e0b ${weightDeg}deg ${weightDeg + kvDeg}deg, var(--border) ${weightDeg + kvDeg}deg 360deg)` }}
+          ><div className="vram-donut-hole" /></div>
+          <div className="vram-text">
+            <span className="vram-total">{totalVram.toFixed(1)} / {hwTotal} GB{vramOverflow ? ' !' : ''}</span>
+            <span className="vram-detail">
+              <span className="vram-item"><span className="vram-dot" style={{ background: '#60a5fa' }} />Weights {model.weightGB.toFixed(1)}</span>
+              <span className="vram-item"><span className="vram-dot" style={{ background: '#f59e0b' }} />KV {kvGB.toFixed(1)}</span>
+              <span className="vram-item vram-free">{Math.max(0, hwTotal - totalVram).toFixed(1)} free</span>
+            </span>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="vram-row">
+          <div className="cloud-badge">Cloud</div>
+          <div className="vram-text">
+            <span className="vram-total">{model.maxCtx} context window</span>
+            <span className="vram-detail"><span className="vram-item">No local memory constraints</span></span>
+          </div>
+        </div>
+      )}
 
       <div className="stats-row">
         <div className="stat"><span className="stat-label">Output{model.outputMul > 1 ? ` (${model.outputMul}x)` : ''}</span><span className="stat-value">{displayedTokens.length.toLocaleString()} / {effectiveOutput.toLocaleString()}</span></div>
@@ -646,7 +683,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
 
 // ── App ──
 function App() {
-  const [activeExperiment, setActiveExperiment] = useState('5090-best')
+  const [activeExperiment, setActiveExperiment] = useState('cloud-all')
   const [isRunning, setIsRunning] = useState(false)
   const [isReset, setIsReset] = useState(false)
   const [tokenCount, setTokenCount] = useState(4000)

@@ -464,6 +464,22 @@
   flex-shrink: 0;
 }
 
+.cloud-badge {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.5rem;
+  font-weight: 600;
+  color: var(--text);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
+}
+
 /* ── Stats Row ── */
 
 .stats-row {
