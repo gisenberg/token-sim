@@ -920,6 +920,10 @@ function App() {
   const handleStart = () => { setIsReset(false); setCompletedStreams(new Set()); setIsRunning(true) }
   const handleReset = () => { setIsRunning(false); setIsReset(true); setCompletedStreams(new Set()); setCumulatives({}); setTimeout(() => setIsReset(false), 100) }
 
+  const tokens = useMemo(() => generateText(maxTotalTokens), [maxTotalTokens])
+  const allComplete = completedStreams.size >= experiment.models.length
+  const controlsDisabled = isRunning && !allComplete
+
   // Loop: when all complete, accumulate tallies and restart
   useEffect(() => {
     if (allComplete && loopEnabled && isRunning) {
@@ -943,10 +947,6 @@ function App() {
       return () => clearTimeout(timer)
     }
   }, [allComplete, loopEnabled, isRunning, selectedModels, promptTokens, tokenCount, toolSteps])
-
-  const tokens = useMemo(() => generateText(maxTotalTokens), [maxTotalTokens])
-  const allComplete = completedStreams.size >= experiment.models.length
-  const controlsDisabled = isRunning && !allComplete
 
   const cols = experiment.columns
   const rows = []
