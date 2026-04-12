@@ -96,9 +96,9 @@ const EXPERIMENTS = [
   { id: 'cloud-all', category: 'cloud', name: 'Cloud Frontier', desc: 'Top model from each provider', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-gpt54','cloud-sonnet46','cloud-gemini3flash','cloud-gpt54-mini'] },
 { id: 'cloud-speed', category: 'cloud', name: 'Cloud Speed Demons', desc: 'Fastest output from each provider', columns: 3, models: ['cloud-haiku45','cloud-gemini3flash','cloud-gpt54-nano'] },
   // Cloud vs Local
-  { id: 'cloud-vs-5090', category: 'cloud-vs-local', name: 'Cloud vs RTX 5090', desc: 'API models vs the fastest local GPU', columns: 3, models: ['cloud-opus46-1m','cloud-sonnet46','cloud-gemini3flash','5090-gemma26b-q6','5090-gemma26b-q4','5090-qwen35b-a3b'] },
-  { id: 'cloud-vs-spark', category: 'cloud-vs-local', name: 'Cloud vs DGX Spark', desc: 'API models vs 122B local models', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-o3mini','spark-qwen122b-ik','spark-qwen3-coder','spark-glm45'] },
-  { id: 'cloud-vs-m4', category: 'cloud-vs-local', name: 'Cloud vs M4 Max', desc: 'API models vs portable local inference', columns: 3, models: ['cloud-sonnet46','cloud-haiku45','cloud-gemini3flash','m4-gemma26b-q6','m4-gemma31b','m4-qwen9b'] },
+  { id: 'cloud-vs-5090', category: 'cloud-vs-local', name: 'Cloud vs RTX 5090', desc: 'Opus, Gemini Pro, GPT-5.4 vs fastest local GPU', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-gpt54','5090-gemma26b-q6','5090-gemma26b-q4','5090-qwen35b-a3b'] },
+  { id: 'cloud-vs-spark', category: 'cloud-vs-local', name: 'Cloud vs DGX Spark', desc: 'Opus, Gemini Pro, GPT-5.4 vs 122B local models', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-gpt54','spark-qwen122b-ik','spark-qwen3-coder','spark-glm45'] },
+  { id: 'cloud-vs-m4', category: 'cloud-vs-local', name: 'Cloud vs M4 Max', desc: 'Opus, Gemini Pro, GPT-5.4 vs portable local', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-gpt54','m4-gemma26b-q6','m4-gemma31b','m4-qwen9b'] },
   // Local platforms
   { id: '5090-best', category: 'platform', name: '5090 Best 6', desc: 'Top models on RTX 5090', columns: 3, models: ['5090-gemma26b-q6','5090-gemma31b','5090-qwen27b-opus','5090-gemma26b-q4','5090-harmonic27b','5090-qwopus27b'] },
   { id: 'm4-best', category: 'platform', name: 'M4 Max Best 6', desc: 'Top models on M4 Max — bandwidth-limited', columns: 3, models: ['m4-gemma31b','m4-gemma26b-q6','m4-qwen27b-mlx','m4-qwen27b-opus','m4-gemma26b-q4','m4-qwen9b'] },
