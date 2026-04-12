@@ -192,10 +192,11 @@ const formatTime = (seconds) => {
 
 const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptTokens, onComplete, streamIndex }) => {
   const [displayedTokens, setDisplayedTokens] = useState([])
-  const [phase, setPhase] = useState('idle')
+  const [phase, setPhase] = useState('idle') // idle | compacting | prefill | thinking | streaming | complete
   const [thinkingTokensGenerated, setThinkingTokensGenerated] = useState(0)
   const [elapsedTime, setElapsedTime] = useState(0)
   const [prefillElapsed, setPrefillElapsed] = useState(0)
+  const [compactElapsed, setCompactElapsed] = useState(0)
   const intervalRef = useRef(null)
   const timerRef = useRef(null)
   const prefillTimerRef = useRef(null)
@@ -238,6 +239,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       setThinkingTokensGenerated(0)
       setElapsedTime(0)
       setPrefillElapsed(0)
+      setCompactElapsed(0)
       totalIndexRef.current = 0
       hasStartedRef.current = false
       startTimeRef.current = null
@@ -248,7 +250,6 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
     if (isRunning && !hasStartedRef.current) {
       hasStartedRef.current = true
       startTimeRef.current = Date.now()
-      setPhase('prefill')
 
       timerRef.current = setInterval(() => {
         if (startTimeRef.current) {
@@ -256,54 +257,83 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         }
       }, 100)
 
-      const prefillMs = (promptTokens / model.prefillRate) * 1000
-      const prefillStart = Date.now()
-      const animatePrefill = () => {
-        const elapsed = Date.now() - prefillStart
-        const progress = Math.min(elapsed / prefillMs, 1)
-        setPrefillElapsed(progress)
-        if (progress < 1) {
-          prefillTimerRef.current = setTimeout(animatePrefill, 16)
-        }
-      }
-      animatePrefill()
+      // Compaction: if usage > 80% of context, simulate summarizing old turns
+      const maxCtxTokens = parseInt(model.maxCtx) * 1000
+      const usedTokens = promptTokens + thinkingBudget + tokenCount
+      const usageRatio = usedTokens / maxCtxTokens
+      // Compaction time scales with how far over 80% we are (at ~half prefill speed)
+      const needsCompact = usageRatio > 0.8
+      const compactTokens = needsCompact ? Math.max(0, usedTokens - maxCtxTokens * 0.6) : 0
+      const compactMs = needsCompact ? (compactTokens / (model.prefillRate * 0.5)) * 1000 : 0
 
-      prefillTimerRef.current = setTimeout(() => {
-        decodeStartRef.current = Date.now()
-
-        if (thinkingBudget > 0) {
-          setPhase('thinking')
-        } else {
-          setPhase('streaming')
-        }
-
-        const interval = 1000 / model.tokPerSec
-        intervalRef.current = setInterval(() => {
-          if (totalIndexRef.current < totalTokens) {
-            if (totalIndexRef.current < thinkingBudget) {
-              setThinkingTokensGenerated(totalIndexRef.current + 1)
-              totalIndexRef.current++
-            } else {
-              if (totalIndexRef.current === thinkingBudget && thinkingBudget > 0) {
-                setPhase('streaming')
-              }
-              const displayIndex = totalIndexRef.current - thinkingBudget
-              if (displayIndex < tokenCount) {
-                setDisplayedTokens(prev => [...prev, tokens[displayIndex]])
-              }
-              totalIndexRef.current++
-            }
-          } else {
-            clearInterval(intervalRef.current)
-            clearInterval(timerRef.current)
-            if (startTimeRef.current) {
-              setElapsedTime(((Date.now() - startTimeRef.current) / 1000).toFixed(1))
-            }
-            setPhase('complete')
-            onComplete(streamIndex)
+      const startPrefill = () => {
+        setPhase('prefill')
+        const prefillMs = (promptTokens / model.prefillRate) * 1000
+        const prefillStart = Date.now()
+        const animatePrefill = () => {
+          const elapsed = Date.now() - prefillStart
+          const progress = Math.min(elapsed / prefillMs, 1)
+          setPrefillElapsed(progress)
+          if (progress < 1) {
+            prefillTimerRef.current = setTimeout(animatePrefill, 16)
           }
-        }, interval)
-      }, prefillMs)
+        }
+        animatePrefill()
+
+        prefillTimerRef.current = setTimeout(() => {
+          decodeStartRef.current = Date.now()
+
+          if (thinkingBudget > 0) {
+            setPhase('thinking')
+          } else {
+            setPhase('streaming')
+          }
+
+          const interval = 1000 / model.tokPerSec
+          intervalRef.current = setInterval(() => {
+            if (totalIndexRef.current < totalTokens) {
+              if (totalIndexRef.current < thinkingBudget) {
+                setThinkingTokensGenerated(totalIndexRef.current + 1)
+                totalIndexRef.current++
+              } else {
+                if (totalIndexRef.current === thinkingBudget && thinkingBudget > 0) {
+                  setPhase('streaming')
+                }
+                const displayIndex = totalIndexRef.current - thinkingBudget
+                if (displayIndex < tokenCount) {
+                  setDisplayedTokens(prev => [...prev, tokens[displayIndex]])
+                }
+                totalIndexRef.current++
+              }
+            } else {
+              clearInterval(intervalRef.current)
+              clearInterval(timerRef.current)
+              if (startTimeRef.current) {
+                setElapsedTime(((Date.now() - startTimeRef.current) / 1000).toFixed(1))
+              }
+              setPhase('complete')
+              onComplete(streamIndex)
+            }
+          }, interval)
+        }, prefillMs)
+      }
+
+      if (needsCompact) {
+        setPhase('compacting')
+        const compactStart = Date.now()
+        const animateCompact = () => {
+          const elapsed = Date.now() - compactStart
+          const progress = Math.min(elapsed / compactMs, 1)
+          setCompactElapsed(progress)
+          if (progress < 1) {
+            prefillTimerRef.current = setTimeout(animateCompact, 16)
+          }
+        }
+        animateCompact()
+        prefillTimerRef.current = setTimeout(startPrefill, compactMs)
+      } else {
+        startPrefill()
+      }
     }
 
     return () => {
@@ -330,6 +360,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
 
   const statusLabel = {
     idle: 'Ready',
+    compacting: 'Compacting',
     prefill: 'Prefill',
     thinking: 'Thinking',
     streaming: 'Streaming',
@@ -382,11 +413,15 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
           <span>Context: {usedTokens.toLocaleString()} / {maxCtxTokens.toLocaleString()}{overflows ? ' — overflow!' : ''}</span>
         </div>
         <div className={`ctx-bar ${overflows ? 'ctx-overflow' : ''}`}>
-          <div className="ctx-seg ctx-prompt" style={{ width: `${promptPct}%` }} title={`Prompt: ${promptTokens.toLocaleString()}`} />
-          {thinkingBudget > 0 && (
-            <div className="ctx-seg ctx-thinking" style={{ width: `${thinkingPct}%` }} title={`Thinking: ${thinkingBudget.toLocaleString()}`} />
-          )}
-          <div className="ctx-seg ctx-output" style={{ width: `${outputPct}%` }} title={`Output: ${tokenCount.toLocaleString()}`} />
+          <span className="ctx-bar-tick" />
+          <span className="ctx-bar-tick-label">compact</span>
+          <div className="ctx-bar-fill-area">
+            <div className="ctx-seg ctx-prompt" style={{ width: `${promptPct}%` }} title={`Prompt: ${promptTokens.toLocaleString()}`} />
+            {thinkingBudget > 0 && (
+              <div className="ctx-seg ctx-thinking" style={{ width: `${thinkingPct}%` }} title={`Thinking: ${thinkingBudget.toLocaleString()}`} />
+            )}
+            <div className="ctx-seg ctx-output" style={{ width: `${outputPct}%` }} title={`Output: ${tokenCount.toLocaleString()}`} />
+          </div>
         </div>
         <div className="ctx-bar-legend">
           <span className="ctx-legend-item"><span className="ctx-swatch ctx-prompt" />Prompt</span>
@@ -423,6 +458,18 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
           style={{ width: `${totalProgress}%`, background: model.color }}
         />
       </div>
+
+      {phase === 'compacting' && (
+        <div className="compact-banner">
+          <span className="compact-spinner" />
+          <div className="compact-detail">
+            <span>Compacting context — summarizing prior turns</span>
+            <div className="compact-bar">
+              <div className="compact-bar-fill" style={{ width: `${compactElapsed * 100}%` }} />
+            </div>
+          </div>
+        </div>
+      )}
 
       {phase === 'prefill' && (
         <div className="prefill-banner">

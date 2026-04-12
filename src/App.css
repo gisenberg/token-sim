@@ -367,6 +367,10 @@
   padding-top: 2px;
 }
 
+.card-status.compacting {
+  color: #f87171;
+}
+
 .card-status.prefill {
   color: #fbbf24;
 }
@@ -421,6 +425,7 @@
 
 .ctx-bar-wrapper {
   padding: 8px 16px 6px;
+  padding-top: 20px;
 }
 
 .ctx-bar-labels {
@@ -431,12 +436,40 @@
 }
 
 .ctx-bar {
-  display: flex;
   height: 6px;
   background: var(--border);
   border-radius: 3px;
+  position: relative;
+}
+
+.ctx-bar-fill-area {
+  display: flex;
+  height: 100%;
+  border-radius: 3px;
   overflow: hidden;
   gap: 1px;
+}
+
+.ctx-bar-tick {
+  position: absolute;
+  left: 80%;
+  top: -3px;
+  bottom: -3px;
+  width: 1px;
+  background: #f87171;
+  opacity: 0.6;
+  z-index: 1;
+}
+
+.ctx-bar-tick-label {
+  position: absolute;
+  left: 80%;
+  top: -14px;
+  transform: translateX(-50%);
+  font-size: 0.55rem;
+  color: #f87171;
+  opacity: 0.6;
+  white-space: nowrap;
 }
 
 .ctx-bar.ctx-overflow {
@@ -538,6 +571,51 @@
   height: 100%;
   border-radius: 1px;
   transition: width 0.15s linear;
+}
+
+/* ── Compacting State ── */
+
+.compact-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  font-size: 0.8rem;
+  color: var(--text);
+  background: rgba(248, 113, 113, 0.06);
+  border-bottom: 1px solid var(--border);
+}
+
+.compact-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-light);
+  border-top-color: #f87171;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+.compact-detail {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 0.78rem;
+}
+
+.compact-bar {
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.compact-bar-fill {
+  height: 100%;
+  background: #f87171;
+  border-radius: 2px;
+  transition: width 16ms linear;
 }
 
 /* ── Prefill State ── */
