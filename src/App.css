@@ -697,6 +697,59 @@
 .tool-log-final { color: var(--text-bright); }
 .tool-log-final .tool-log-icon { color: var(--text-bright); }
 
+/* ── Cost Chart ── */
+
+.cost-chart {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px 8px;
+  z-index: 10;
+}
+
+.cost-chart-title {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.cost-chart svg { display: block; }
+
+.chart-label {
+  font-size: 9px;
+  fill: var(--text);
+  font-family: var(--mono);
+}
+
+.cost-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 0.6rem;
+  color: var(--text);
+}
+
+.cost-chart-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.cost-chart-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+
 /* ── About Page ── */
 
 .about-page {
