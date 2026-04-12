@@ -319,18 +319,22 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       }
 
       // Run the final output decode
+      // Skip thinking phase when tool calls are active — the tool loop is the reasoning
+      const useThinking = thinkingBudget > 0 && toolSteps.length === 0
+      const decodeTotal = useThinking ? totalTokens : effectiveOutput
+
       const startFinalDecode = () => {
         decodeStartRef.current = Date.now()
-        setPhase(thinkingBudget > 0 ? 'thinking' : 'streaming')
+        setPhase(useThinking ? 'thinking' : 'streaming')
         const interval = 1000 / model.tokPerSec
         intervalRef.current = setInterval(() => {
-          if (totalIndexRef.current < totalTokens) {
-            if (totalIndexRef.current < thinkingBudget) {
+          if (totalIndexRef.current < decodeTotal) {
+            if (useThinking && totalIndexRef.current < thinkingBudget) {
               setThinkingTokensGenerated(totalIndexRef.current + 1)
               totalIndexRef.current++
             } else {
-              if (totalIndexRef.current === thinkingBudget && thinkingBudget > 0) setPhase('streaming')
-              const di = totalIndexRef.current - thinkingBudget
+              if (useThinking && totalIndexRef.current === thinkingBudget) setPhase('streaming')
+              const di = totalIndexRef.current - (useThinking ? thinkingBudget : 0)
               if (di < effectiveOutput) setDisplayedTokens(prev => [...prev, tokens[di]])
               totalIndexRef.current++
             }
