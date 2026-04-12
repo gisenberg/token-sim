@@ -1,0 +1,33 @@
+:root {
+  --bg: #0b0e14;
+  --bg-card: #131720;
+  --bg-inset: #0a0d12;
+  --border: #1e2530;
+  --border-light: #2a3140;
+  --text: #8899aa;
+  --text-bright: #c8d6e5;
+  --text-heading: #e8eef4;
+  --mono: ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', system-ui, sans-serif;
+
+  font: 15px/1.5 var(--sans);
+  color-scheme: dark;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  min-height: 100vh;
+}
+
+#root {
+  max-width: 1440px;
+  margin: 0 auto;
+}
