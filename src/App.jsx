@@ -988,10 +988,21 @@ function App() {
         return newCtx
       })
 
+      // Reset must render before restart — use separate frames
       const timer = setTimeout(() => {
+        setIsRunning(false)
         setIsReset(true)
-        setTimeout(() => { setIsReset(false); setCompletedStreams(new Set()); setIsRunning(true) }, 150)
-      }, 500)
+        setCompletedStreams(new Set())
+        // Wait for reset to render, then restart
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            setIsReset(false)
+            requestAnimationFrame(() => {
+              setIsRunning(true)
+            })
+          })
+        })
+      }, 300)
       return () => clearTimeout(timer)
     }
   }, [allComplete, loopEnabled, isRunning, selectedModels, promptTokens, tokenCount, toolSteps, accumulatedContext])
