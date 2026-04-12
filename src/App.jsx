@@ -9,12 +9,14 @@ const CITATIONS = {
   'Anthropic API': 'https://artificialanalysis.ai/providers/anthropic',
   'Google API': 'https://artificialanalysis.ai/providers/google',
   'OpenAI API': 'https://artificialanalysis.ai/providers/openai',
+  'OpenRouter Free': 'https://github.com/gisenberg/local-model-eval/blob/main/results/API_BENCH_5090.md',
+  'NVIDIA Free': 'https://github.com/gisenberg/local-model-eval/blob/main/results/API_BENCH_5090.md',
 }
 
 // weightGB: base VRAM (weights + compute buffers, no KV). Derived from measured VRAM@32K minus KV@32K.
 // kvPerTokKB: incremental KV per token. Measured from context-size deltas where available.
 // 5090 values: measured via turbo4 experiments. M4/Spark: estimated from weight sizes + arch.
-const HW_MEM = { 'RTX 5090': 32, 'M4 Max': 30, 'DGX Spark': 120, 'Anthropic API': 0, 'Google API': 0, 'OpenAI API': 0 }
+const HW_MEM = { 'RTX 5090': 32, 'M4 Max': 30, 'DGX Spark': 120, 'Anthropic API': 0, 'Google API': 0, 'OpenAI API': 0, 'OpenRouter Free': 0, 'NVIDIA Free': 0 }
 
 const MODELS = [
   // RTX 5090 — measured VRAM from experiments/**/all_results.json (turbo4 KV @ 32K)
@@ -75,11 +77,15 @@ const MODELS = [
   { id: 'cloud-gpt54-mini', name: 'GPT-5.4 mini', quant: '400K context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 168, prefillRate: 40000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'frontier', thinking: true, thinkingBudget: 800, outputMul: 1, costIn: 0.4, costOut: 1.6, color: '#4f46e5', hwColor: '#818cf8' },
   { id: 'cloud-gpt54-nano', name: 'GPT-5.4 nano', quant: '400K context', hardware: 'OpenAI API', tier: 'A', tokPerSec: 184, prefillRate: 50000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'good', thinking: true, thinkingBudget: 500, outputMul: 1, costIn: 0.2, costOut: 1.25, color: '#4f46e5', hwColor: '#818cf8' },
   { id: 'cloud-gpt51-codex-mini', name: 'GPT-5.1 Codex mini', quant: '400K context', hardware: 'OpenAI API', tier: 'A', tokPerSec: 185, prefillRate: 45000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'good', thinking: true, thinkingBudget: 800, outputMul: 1, costIn: 1.25, costOut: 10, color: '#4f46e5', hwColor: '#818cf8' },
+  // OpenRouter Free / NVIDIA Free — measured via api_bench.py, quality from 4-benchmark coding suite
+  // GPT-OSS 120B: 16/22 (73%) — passes ExprEval+A*+String, 0/6 on LRU (TypeScript syntax contamination)
+  { id: 'free-gpt-oss-120b', name: 'GPT-OSS 120B', quant: '131K context', hardware: 'OpenRouter Free', tier: 'B', tokPerSec: 34, prefillRate: 5000, weightGB: 0, kvPerTokKB: 0, maxCtx: '131K', quality: '16/22', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#10b981', hwColor: '#6ee7b7' },
 ]
 
 // ── Experiment Presets ──
 const EXPERIMENT_CATEGORIES = [
   { id: 'cloud', label: 'Cloud API' },
+  { id: 'free-tier', label: 'Free Tier' },
   { id: 'cloud-vs-local', label: 'Cloud vs Local' },
   { id: 'platform', label: 'Local Platforms' },
   { id: 'cross-platform', label: 'Cross-Platform' },
@@ -95,6 +101,10 @@ const EXPERIMENTS = [
   { id: 'openai-lineup', category: 'cloud', name: 'OpenAI Lineup', desc: 'GPT-5.4 family + Codex models', columns: 3, models: ['cloud-gpt54','cloud-gpt54-mini','cloud-gpt54-nano','cloud-gpt53-codex','cloud-gpt51-codex-mini','cloud-o3mini'] },
   { id: 'cloud-all', category: 'cloud', name: 'Cloud Frontier', desc: 'Top model from each provider', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-gpt54','cloud-sonnet46','cloud-gemini3flash','cloud-gpt54-mini'] },
 { id: 'cloud-speed', category: 'cloud', name: 'Cloud Speed Demons', desc: 'Fastest output from each provider', columns: 3, models: ['cloud-haiku45','cloud-gemini3flash','cloud-gpt54-nano'] },
+  // Free Tier
+  { id: 'free-vs-local-s', category: 'free-tier', name: 'Free API vs Local S-Tier', desc: 'GPT-OSS 120B (free) vs best local models on RTX 5090', columns: 3, models: ['free-gpt-oss-120b','5090-gemma26b-q6','5090-gemma31b','5090-harmonic27b'] },
+  { id: 'free-vs-local-c', category: 'free-tier', name: 'Free API vs Local C-Tier', desc: 'GPT-OSS 120B (free) vs Qwen 35B — same LRU gap, different models', columns: 2, models: ['free-gpt-oss-120b','5090-qwen35b-a3b'] },
+  { id: 'free-vs-paid', category: 'free-tier', name: 'Free vs Paid Cloud', desc: 'Can free models compete with frontier APIs?', columns: 3, models: ['free-gpt-oss-120b','cloud-haiku45','cloud-gpt54-nano','cloud-sonnet46'] },
   // Cloud vs Local
   { id: 'cloud-vs-5090', category: 'cloud-vs-local', name: 'Cloud vs RTX 5090', desc: 'Opus, Gemini Pro, GPT-5.4 vs fastest local GPU', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-gpt54','5090-gemma26b-q6','5090-gemma26b-q4','5090-qwen35b-a3b'] },
   { id: 'cloud-vs-spark', category: 'cloud-vs-local', name: 'Cloud vs DGX Spark', desc: 'Opus, Gemini Pro, GPT-5.4 vs 122B local models', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-gpt54','spark-qwen122b-ik','spark-qwen3-coder','spark-glm45'] },
