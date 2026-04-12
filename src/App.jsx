@@ -697,7 +697,7 @@ function App() {
   const maxTotalTokens = Math.round(tokenCount * maxOutputMul) + maxThinkingBudget
   const toolSteps = useMemo(() => flattenSteps(TOOL_PRESETS[toolPresetIdx].steps), [toolPresetIdx])
 
-  const handleExperimentChange = (id) => { if (!isRunning) { setActiveExperiment(id); setCompletedStreams(new Set()) } }
+  const handleExperimentChange = (id) => { setIsRunning(false); setIsReset(true); setCompletedStreams(new Set()); setActiveExperiment(id); setTimeout(() => setIsReset(false), 100) }
   const handleComplete = useCallback((index) => { setCompletedStreams(prev => { const next = new Set(prev); next.add(index); return next }) }, [])
   const handleStart = () => { setIsReset(false); setCompletedStreams(new Set()); setIsRunning(true) }
   const handleReset = () => { setIsRunning(false); setIsReset(true); setCompletedStreams(new Set()); setTimeout(() => setIsReset(false), 100) }
@@ -718,7 +718,7 @@ function App() {
           <div key={cat.id} className="nav-category">
             <div className="nav-cat-label">{cat.label}</div>
             {EXPERIMENTS.filter(e => e.category === cat.id).map(exp => (
-              <button key={exp.id} className={`nav-item ${activeExperiment === exp.id ? 'active' : ''}`} onClick={() => handleExperimentChange(exp.id)} disabled={controlsDisabled}>
+              <button key={exp.id} className={`nav-item ${activeExperiment === exp.id ? 'active' : ''}`} onClick={() => handleExperimentChange(exp.id)}>
                 <span className="nav-item-name">{exp.name}</span>
                 <span className="nav-item-count">{exp.models.length}</span>
               </button>
