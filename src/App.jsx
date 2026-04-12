@@ -748,8 +748,9 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
   const usedTokens = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current + toolResultTokens + thinkingBudget + effectiveOutput
   const overflows = usedTokens > maxCtxTokens
   const pct = (n) => Math.min((n / maxCtxTokens) * 100, 100)
+  const effectivePrompt = promptTokens + streamAccCtxRef.current
   const systemPct = pct(SYSTEM_TOKENS)
-  const promptPct = Math.min(pct(promptTokens), 100 - systemPct)
+  const promptPct = Math.min(pct(effectivePrompt), 100 - systemPct)
   const toolPct = Math.min(pct(toolResultTokens), Math.max(0, 100 - systemPct - promptPct))
   const thinkPct = Math.min(pct(thinkingBudget), Math.max(0, 100 - systemPct - promptPct - toolPct))
   const outPct = Math.min(pct(effectiveOutput), Math.max(0, 100 - systemPct - promptPct - toolPct - thinkPct))
@@ -816,13 +817,17 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       </div>
 
       {hwTotal === 0 && model.costIn != null && (() => {
-        const runInput = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current + toolResultTokens + toolSteps.reduce((s, t) => s + (t.resultTokens ?? 0), 0)
-        const runOutput = effectiveOutput + thinkingBudget + toolSteps.reduce((s, t) => s + (t.decodeTokens ?? 0) + (t.thinkTokens ?? 0), 0)
         const threshold = model.costInThreshold ?? Infinity
         const useHighTier = maxCtxTokens > threshold
         const inRate = useHighTier && model.costInHigh ? model.costInHigh : model.costIn
         const outRate = useHighTier && model.costOutHigh ? model.costOutHigh : model.costOut
-        const runCost = (runInput / 1e6) * inRate + (runOutput / 1e6) * outRate
+        // Don't add runCost when complete — it's already in cumulativeCost
+        let runCost = 0
+        if (phase !== 'complete' && phase !== 'idle') {
+          const runInput = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current + toolResultTokens + toolSteps.reduce((s, t) => s + (t.resultTokens ?? 0), 0)
+          const runOutput = displayedTokens.length + thinkingTokensGenerated + toolSteps.reduce((s, t) => s + (t.decodeTokens ?? 0) + (t.thinkTokens ?? 0), 0)
+          runCost = (runInput / 1e6) * inRate + (runOutput / 1e6) * outRate
+        }
         const totalCost = cumulativeCost + runCost
         const rateLabel = `$${inRate}/$${outRate} per 1M`
         return (
