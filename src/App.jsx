@@ -65,7 +65,7 @@ const MODELS = [
   // Google API
   { id: 'cloud-gemini31pro', name: 'Gemini 3.1 Pro', quant: '1M context', hardware: 'Google API', tier: 'S', tokPerSec: 126, prefillRate: 20000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 4000, outputMul: 1, color: '#059669', hwColor: '#34d399' },
   { id: 'cloud-gemini25pro', name: 'Gemini 2.5 Pro', quant: '1M context', hardware: 'Google API', tier: 'S', tokPerSec: 122, prefillRate: 20000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 4000, outputMul: 1, color: '#059669', hwColor: '#34d399' },
-  { id: 'cloud-gemini25flash', name: 'Gemini 2.5 Flash', quant: '1M context', hardware: 'Google API', tier: 'A', tokPerSec: 192, prefillRate: 80000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'good', thinking: true, thinkingBudget: 2000, outputMul: 1, color: '#059669', hwColor: '#34d399' },
+  { id: 'cloud-gemini3flash', name: 'Gemini 3 Flash', quant: '1M context', hardware: 'Google API', tier: 'S', tokPerSec: 153, prefillRate: 60000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 4000, outputMul: 1, color: '#059669', hwColor: '#34d399' },
   // OpenAI API
   { id: 'cloud-gpt41', name: 'GPT-4.1', quant: '1M context', hardware: 'OpenAI API', tier: 'A', tokPerSec: 100, prefillRate: 30000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'good', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#4f46e5', hwColor: '#818cf8' },
   { id: 'cloud-o3mini', name: 'o3-mini (high)', quant: '200K context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 152, prefillRate: 30000, weightGB: 0, kvPerTokKB: 0, maxCtx: '200K', quality: 'frontier', thinking: true, thinkingBudget: 8000, outputMul: 1, color: '#4f46e5', hwColor: '#818cf8' },
@@ -90,15 +90,15 @@ const EXPERIMENT_CATEGORIES = [
 const EXPERIMENTS = [
   // Cloud API
   { id: 'anthropic-lineup', category: 'cloud', name: 'Anthropic Lineup', desc: 'Opus 4.6 vs Sonnet 4.6 vs Haiku 4.5', columns: 2, models: ['cloud-opus46-1m','cloud-opus46-fast','cloud-sonnet46','cloud-haiku45'] },
-  { id: 'google-lineup', category: 'cloud', name: 'Google Lineup', desc: 'Gemini 3.1 Pro vs 2.5 Pro vs 2.5 Flash', columns: 3, models: ['cloud-gemini31pro','cloud-gemini25pro','cloud-gemini25flash'] },
+  { id: 'google-lineup', category: 'cloud', name: 'Google Lineup', desc: 'Gemini 3.1 Pro vs 3 Flash vs 2.5 Pro', columns: 3, models: ['cloud-gemini31pro','cloud-gemini3flash','cloud-gemini25pro'] },
   { id: 'openai-lineup', category: 'cloud', name: 'OpenAI Lineup', desc: 'GPT-5.4 family + Codex models', columns: 3, models: ['cloud-gpt54','cloud-gpt54-mini','cloud-gpt54-nano','cloud-gpt53-codex','cloud-gpt51-codex-mini','cloud-o3mini'] },
-  { id: 'cloud-all', category: 'cloud', name: 'Cloud Frontier', desc: 'Top model from each provider', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-gpt54','cloud-sonnet46','cloud-gemini25flash','cloud-gpt54-mini'] },
+  { id: 'cloud-all', category: 'cloud', name: 'Cloud Frontier', desc: 'Top model from each provider', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-gpt54','cloud-sonnet46','cloud-gemini3flash','cloud-gpt54-mini'] },
   { id: 'frontier-thinking', category: 'cloud', name: 'Frontier Thinking', desc: 'Opus vs Gemini Pro vs GPT-5.4 — thinking overhead', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-gpt54'] },
-  { id: 'cloud-speed', category: 'cloud', name: 'Cloud Speed Demons', desc: 'Fastest output from each provider', columns: 3, models: ['cloud-haiku45','cloud-gemini25flash','cloud-gpt54-nano'] },
+  { id: 'cloud-speed', category: 'cloud', name: 'Cloud Speed Demons', desc: 'Fastest output from each provider', columns: 3, models: ['cloud-haiku45','cloud-gemini3flash','cloud-gpt54-nano'] },
   // Cloud vs Local
-  { id: 'cloud-vs-5090', category: 'cloud-vs-local', name: 'Cloud vs RTX 5090', desc: 'API models vs the fastest local GPU', columns: 3, models: ['cloud-opus46-fast','cloud-sonnet46','cloud-gemini25flash','5090-gemma26b-q6','5090-gemma26b-q4','5090-qwen35b-a3b'] },
+  { id: 'cloud-vs-5090', category: 'cloud-vs-local', name: 'Cloud vs RTX 5090', desc: 'API models vs the fastest local GPU', columns: 3, models: ['cloud-opus46-fast','cloud-sonnet46','cloud-gemini3flash','5090-gemma26b-q6','5090-gemma26b-q4','5090-qwen35b-a3b'] },
   { id: 'cloud-vs-spark', category: 'cloud-vs-local', name: 'Cloud vs DGX Spark', desc: 'API models vs 122B local models', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-o3mini','spark-qwen122b-ik','spark-qwen3-coder','spark-glm45'] },
-  { id: 'cloud-vs-m4', category: 'cloud-vs-local', name: 'Cloud vs M4 Max', desc: 'API models vs portable local inference', columns: 3, models: ['cloud-sonnet46','cloud-haiku45','cloud-gemini25flash','m4-gemma26b-q6','m4-gemma31b','m4-qwen9b'] },
+  { id: 'cloud-vs-m4', category: 'cloud-vs-local', name: 'Cloud vs M4 Max', desc: 'API models vs portable local inference', columns: 3, models: ['cloud-sonnet46','cloud-haiku45','cloud-gemini3flash','m4-gemma26b-q6','m4-gemma31b','m4-qwen9b'] },
   // Local platforms
   { id: '5090-best', category: 'platform', name: '5090 Best 6', desc: 'Top models on RTX 5090', columns: 3, models: ['5090-gemma26b-q6','5090-gemma31b','5090-qwen27b-opus','5090-gemma26b-q4','5090-harmonic27b','5090-qwopus27b'] },
   { id: 'm4-best', category: 'platform', name: 'M4 Max Best 6', desc: 'Top models on M4 Max — bandwidth-limited', columns: 3, models: ['m4-gemma31b','m4-gemma26b-q6','m4-qwen27b-mlx','m4-qwen27b-opus','m4-gemma26b-q4','m4-qwen9b'] },
