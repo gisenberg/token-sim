@@ -1037,7 +1037,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         <div className="subagent-banner">
           <div className="subagent-dots">{Array.from({ length: activeSubagents }, (_, i) => <span key={i} className="subagent-dot" />)}</div>
           <div className="subagent-detail">
-            <span>{waves[subagentWaveIdx]?.label}</span>
+            <span>{(subagentWaves ?? [])[subagentWaveIdx]?.label}</span>
             <span className="subagent-count">{activeSubagents} subagent{activeSubagents !== 1 ? 's' : ''} running</span>
           </div>
         </div>
