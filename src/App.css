@@ -110,10 +110,10 @@
   margin-bottom: 4px;
 }
 
-.header-actions {
+.action-bar {
   display: flex;
   gap: 8px;
-  margin-left: auto;
+  margin-bottom: 20px;
 }
 
 .app-header h1 {
