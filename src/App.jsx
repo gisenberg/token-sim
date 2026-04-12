@@ -474,9 +474,10 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         const step = toolSteps[i]
         setCurrentToolIdx(i)
 
-        // First call: full context prefill. Subsequent: only new tokens since last call.
+        // First call: prefill user prompt (system tokens already cached in session).
+        // Subsequent: only new tokens since last call (incremental KV).
         const prefillCtx = i === 0
-          ? SYSTEM_TOKENS + promptTokens + toolResultsRef.current
+          ? promptTokens
           : lastStepTokens
 
         // Prefill → think → tool-call decode → tool exec → stream output chunk → next
@@ -516,8 +517,8 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
 
       const beginToolLoop = () => {
         if (toolSteps.length === 0) {
-          const ctx = SYSTEM_TOKENS + promptTokens
-          startPrefill(ctx, startFinalDecode)
+          // System tokens already cached, only prefill user prompt
+          startPrefill(promptTokens, startFinalDecode)
         } else {
           runToolStep(0)
         }
