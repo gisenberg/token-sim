@@ -461,6 +461,8 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
   const runCostRef = useRef(0)
   const totalSimTimeRef = useRef(0)
   const totalWallTimeRef = useRef(0)
+  const runSimTimeRef = useRef(0)
+  const lastTickRef = useRef(0)
   const hiddenTokensRef = useRef(0) // thinking + tool decode tokens (not visible but billed)
   const cumulativeInRef = useRef(0)
   const cumulativeOutRef = useRef(0)
@@ -501,7 +503,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
     setToolResultTokens(0); setCurrentToolIdx(-1); setToolLog([]); setOutputCount(0); setWallTime(0)
     totalIndexRef.current = 0; hasStartedRef.current = false
     startTimeRef.current = null; decodeStartRef.current = null; toolResultsRef.current = 0
-    runCostRef.current = 0; hiddenTokensRef.current = 0
+    runCostRef.current = 0; hiddenTokensRef.current = 0; runSimTimeRef.current = 0; lastTickRef.current = 0
   }, [clearTimers])
 
   useEffect(() => {
@@ -512,7 +514,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       setElapsedTime(0); setPrefillElapsed(0); setCompactElapsed(0); setPrefillSize(0)
       setToolResultTokens(0); setCurrentToolIdx(-1); setToolLog([]); setOutputCount(0); setWallTime(0)
       setLoopCount(0); setCumulativeIn(0); setCumulativeOut(0); setCumulativeCost(0); setGeneration(0)
-      streamAccCtxRef.current = 0; cumulativeCostRef.current = 0; runCostRef.current = 0; totalSimTimeRef.current = 0; totalWallTimeRef.current = 0; hiddenTokensRef.current = 0; cumulativeInRef.current = 0; cumulativeOutRef.current = 0
+      streamAccCtxRef.current = 0; cumulativeCostRef.current = 0; runCostRef.current = 0; totalSimTimeRef.current = 0; totalWallTimeRef.current = 0; hiddenTokensRef.current = 0; cumulativeInRef.current = 0; cumulativeOutRef.current = 0; runSimTimeRef.current = 0; lastTickRef.current = 0
       totalIndexRef.current = 0; hasStartedRef.current = false
       startTimeRef.current = null; decodeStartRef.current = null; toolResultsRef.current = 0
       return
@@ -522,15 +524,17 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       hasStartedRef.current = true
       startTimeRef.current = Date.now()
 
-      // Elapsed time shows simulated time (real time * timeScale)
-      // Cost is tracked via a single ref, updated here and on completion
+      // Elapsed time: accumulated incrementally so scale changes don't rewrite history
+      lastTickRef.current = Date.now()
       timerRef.current = setInterval(() => {
         if (startTimeRef.current) {
-          const wallSec = (Date.now() - startTimeRef.current) / 1000
-          const simTime = wallSec * getTs()
-          setElapsedTime(simTime.toFixed(1))
-          setWallTime((totalWallTimeRef.current + wallSec).toFixed(1))
+          const now = Date.now()
+          const dtMs = now - lastTickRef.current
+          lastTickRef.current = now
+          runSimTimeRef.current += (dtMs / 1000) * getTs()
+          setElapsedTime(runSimTimeRef.current.toFixed(1))
           setOutputCount(totalIndexRef.current)
+          const simTime = runSimTimeRef.current
           const runIn = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current + toolResultsRef.current
           const runOut = hiddenTokensRef.current + totalIndexRef.current
           // Compute cost for cloud models
@@ -660,7 +664,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
             doThinking(thinkAmount, () => {
               streamChunk(finalOutput, () => {
                 clearInterval(timerRef.current)
-                if (startTimeRef.current) setElapsedTime(((Date.now() - startTimeRef.current) * getTs() / 1000).toFixed(1))
+                setElapsedTime(runSimTimeRef.current.toFixed(1))
                 setPhase('complete')
                 onComplete(streamIndex)
 
@@ -696,11 +700,10 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
                     streamAccCtxRef.current += turnTokens
                   }
 
-                  // Accumulate time before reset clears startTimeRef
+                  // Accumulate time before selfReset clears refs
+                  totalSimTimeRef.current += runSimTimeRef.current
                   if (startTimeRef.current) {
-                    const wallSec = (Date.now() - startTimeRef.current) / 1000
-                    totalSimTimeRef.current += wallSec * getTs()
-                    totalWallTimeRef.current += wallSec
+                    totalWallTimeRef.current += (Date.now() - startTimeRef.current) / 1000
                   }
                   runCostRef.current = 0
 
