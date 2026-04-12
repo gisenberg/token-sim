@@ -505,8 +505,8 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
 
   // VRAM breakdown
   const hwTotal = HW_MEM[model.hardware] || 32
-  const contextTokens = SYSTEM_TOKENS + promptTokens + toolResultTokens + thinkingBudget + effectiveOutput
-  const kvGB = (model.kvPerTokKB * contextTokens) / 1024 / 1024
+  // KV cache is allocated for the full context window, not just tokens in use
+  const kvGB = (model.kvPerTokKB * maxCtxTokens) / 1024 / 1024
   const totalVram = model.weightGB + kvGB
   const weightDeg = (model.weightGB / hwTotal) * 360
   const kvDeg = (kvGB / hwTotal) * 360
