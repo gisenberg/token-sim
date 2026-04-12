@@ -52,7 +52,8 @@ const MODELS = [
   { id: 'spark-qwen122b-ik', name: 'Qwen 3.5 122B-A10B', quant: 'Q4_K_M (ik-llama)', hardware: 'DGX Spark', tier: 'S', tokPerSec: 26, prefillRate: 627, weightGB: 73, kvPerTokKB: 24, maxCtx: '256K', quality: '17/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#a78bfa', hwColor: '#c4b5fd' },
   { id: 'spark-qwen122b-unsloth', name: 'Qwen 3.5 122B-A10B', quant: 'Q4_K_M (mainline)', hardware: 'DGX Spark', tier: 'S', tokPerSec: 21, prefillRate: 600, weightGB: 74, kvPerTokKB: 24, maxCtx: '256K', quality: '18/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#a78bfa', hwColor: '#c4b5fd' },
   // vLLM + FlashInfer + MTP-2 spec dec — 2.3x throughput vs llama.cpp
-  { id: 'spark-qwen122b-vllm', name: 'Qwen 3.5 122B-A10B', quant: 'INT4+FP8 (vLLM)', hardware: 'DGX Spark', tier: 'S', tokPerSec: 49, prefillRate: 900, weightGB: 77, kvPerTokKB: 24, maxCtx: '256K', quality: '16/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#a78bfa', hwColor: '#c4b5fd' },
+  // vLLM: 66.9 GiB weights + 31.1 GiB KV pool (312K cap) + ~10.5 GiB overhead = ~108 GiB
+  { id: 'spark-qwen122b-vllm', name: 'Qwen 3.5 122B-A10B', quant: 'INT4+FP8 (vLLM)', hardware: 'DGX Spark', tier: 'S', tokPerSec: 49, prefillRate: 900, weightGB: 77, kvPerTokKB: 85, maxCtx: '256K', quality: '16/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#a78bfa', hwColor: '#c4b5fd' },
   { id: 'spark-glm45', name: 'GLM-4.5-Air', quant: 'Q4_K_M', hardware: 'DGX Spark', tier: 'A', tokPerSec: 22, prefillRate: 627, weightGB: 72, kvPerTokKB: 24, maxCtx: '128K', quality: '15/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#a78bfa', hwColor: '#c4b5fd' },
   { id: 'spark-qwen122b-reap', name: 'Qwen 122B REAP-20', quant: 'Q4_K_M (pruned)', hardware: 'DGX Spark', tier: 'A', tokPerSec: 29, prefillRate: 700, weightGB: 59, kvPerTokKB: 24, maxCtx: '256K', quality: '14/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#a78bfa', hwColor: '#c4b5fd' },
   { id: 'spark-qwen122b-mainline', name: 'Qwen 122B-A10B', quant: 'Q4_K_M (bartowski)', hardware: 'DGX Spark', tier: 'A', tokPerSec: 26, prefillRate: 620, weightGB: 73, kvPerTokKB: 24, maxCtx: '256K', quality: '13/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#a78bfa', hwColor: '#c4b5fd' },
@@ -472,6 +473,8 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
   const thinkingBudget = model.thinkingBudget
   const effectiveOutput = Math.round(tokenCount * (model.outputMul || 1))
   const totalTokens = thinkingBudget + effectiveOutput
+  const tsRef = useRef(timeScale)
+  tsRef.current = timeScale
 
   const scrollToBottom = useCallback(() => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current)
@@ -524,7 +527,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       timerRef.current = setInterval(() => {
         if (startTimeRef.current) {
           const wallSec = (Date.now() - startTimeRef.current) / 1000
-          const simTime = wallSec * ts
+          const simTime = wallSec * getTs()
           setElapsedTime(simTime.toFixed(1))
           setWallTime((totalWallTimeRef.current + wallSec).toFixed(1))
           setOutputCount(totalIndexRef.current)
@@ -556,12 +559,14 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       const compactMs = needsCompact ? (compactTokens / (model.prefillRate * 0.5)) * 1000 : 0
 
       // Animate a progress bar over durationMs, then call next()
-      const ts = timeScale || 1
+      const getTs = () => tsRef.current || 1
       const animateBar = (setter, durationMs, next) => {
-        const scaledMs = durationMs / ts
         const start = Date.now()
+        let elapsed = 0
         const tick = () => {
-          const p = Math.min((Date.now() - start) / scaledMs, 1)
+          const dt = Date.now() - start
+          const scaledMs = durationMs / getTs()
+          const p = Math.min(dt / scaledMs, 1)
           setter(p)
           if (p < 1) timeoutRef.current = setTimeout(tick, 16)
           else next()
@@ -582,11 +587,12 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         if (thinkCount <= 0) { next(); return }
         setPhase('thinking')
         setThinkingTokensGenerated(0)
-        const thinkMs = (thinkCount / model.tokPerSec) * 1000 / ts
+        const baseDurationMs = (thinkCount / model.tokPerSec) * 1000
         const thinkStart = Date.now()
         const hiddenBefore = hiddenTokensRef.current
         const tickThink = () => {
           const elapsed = Date.now() - thinkStart
+          const thinkMs = baseDurationMs / getTs()
           const generated = Math.min(Math.floor((elapsed / thinkMs) * thinkCount), thinkCount)
           setThinkingTokensGenerated(generated)
           hiddenTokensRef.current = hiddenBefore + generated
@@ -599,12 +605,12 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       // Stream N tokens of visible output, then call next()
       // Uses time-based batching: at high timeScales, emits multiple tokens per tick
       const streamTokens = (target, onDone) => {
-        const tokPerMs = model.tokPerSec * ts / 1000
         const streamStart = Date.now()
         const baseIndex = totalIndexRef.current
-        const tickInterval = Math.max(16, Math.floor(1000 / model.tokPerSec / ts))
+        const tickInterval = 16
         intervalRef.current = setInterval(() => {
           const elapsed = Date.now() - streamStart
+          const tokPerMs = model.tokPerSec * getTs() / 1000
           const shouldBe = Math.min(baseIndex + Math.floor(elapsed * tokPerMs), target, effectiveOutput)
           if (totalIndexRef.current < shouldBe) {
             const batch = []
@@ -654,7 +660,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
             doThinking(thinkAmount, () => {
               streamChunk(finalOutput, () => {
                 clearInterval(timerRef.current)
-                if (startTimeRef.current) setElapsedTime(((Date.now() - startTimeRef.current) * ts / 1000).toFixed(1))
+                if (startTimeRef.current) setElapsedTime(((Date.now() - startTimeRef.current) * getTs() / 1000).toFixed(1))
                 setPhase('complete')
                 onComplete(streamIndex)
 
@@ -693,7 +699,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
                   // Accumulate time before reset clears startTimeRef
                   if (startTimeRef.current) {
                     const wallSec = (Date.now() - startTimeRef.current) / 1000
-                    totalSimTimeRef.current += wallSec * ts
+                    totalSimTimeRef.current += wallSec * getTs()
                     totalWallTimeRef.current += wallSec
                   }
                   runCostRef.current = 0
@@ -729,11 +735,12 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
             if (!decodeStartRef.current) decodeStartRef.current = Date.now()
             streamChunk(perStepOutput, () => {
               setPhase('tool-decode')
-              const decodeMs = (step.decodeTokens / model.tokPerSec) * 1000 / ts
+              const decodeDurationMs = (step.decodeTokens / model.tokPerSec) * 1000
               const decodeHiddenBefore = hiddenTokensRef.current
               const decodeStart = Date.now()
               const tickDecode = () => {
                 const el = Date.now() - decodeStart
+                const decodeMs = decodeDurationMs / getTs()
                 hiddenTokensRef.current = decodeHiddenBefore + Math.min(Math.floor((el / decodeMs) * step.decodeTokens), step.decodeTokens)
                 if (el < decodeMs) { timeoutRef.current = setTimeout(tickDecode, 50); return }
                 hiddenTokensRef.current = decodeHiddenBefore + step.decodeTokens
@@ -755,7 +762,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
                   lastStepTokens = added
                   setToolResultTokens(toolResultsRef.current)
                   runToolStep(i + 1)
-                }, step.execMs / ts)
+                }, step.execMs / getTs())
               }
               tickDecode()
             })
@@ -784,16 +791,14 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       if (intervalRef.current) clearInterval(intervalRef.current)
       if (timerRef.current) clearInterval(timerRef.current)
     }
-  }, [isRunning, isReset, model, promptTokens, thinkingBudget, effectiveOutput, totalTokens, tokens, toolSteps, timeScale, loopEnabled, generation, onComplete, streamIndex, clearTimers, selfReset])
+  }, [isRunning, isReset, model, promptTokens, thinkingBudget, effectiveOutput, totalTokens, tokens, toolSteps, loopEnabled, generation, onComplete, streamIndex, clearTimers, selfReset])
 
   useEffect(() => {
     if (displayedTokens.length > 0 || toolLog.length > 0) scrollToBottom()
   }, [displayedTokens, toolLog, scrollToBottom])
 
   const totalProgress = totalTokens > 0 ? ((thinkingTokensGenerated + displayedTokens.length) / totalTokens) * 100 : 0
-  // "Actual" tok/s should reflect simulated time (real wall time * timeScale)
-  const ts = timeScale || 1
-  const decodeElapsed = decodeStartRef.current ? (Date.now() - decodeStartRef.current) * ts / 1000 : 0
+  const decodeElapsed = decodeStartRef.current ? (Date.now() - decodeStartRef.current) * (timeScale || 1) / 1000 : 0
   const rate = displayedTokens.length > 0 && decodeElapsed > 0 ? (displayedTokens.length / decodeElapsed).toFixed(1) : null
 
   const phaseLabels = { idle: 'Ready', compacting: 'Compacting', prefill: 'Prefill', 'tool-decode': 'Tool Call', 'tool-exec': 'Executing', thinking: 'Thinking', streaming: 'Streaming', complete: 'Done' }
