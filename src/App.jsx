@@ -421,7 +421,7 @@ const TIER_COLORS = { S: '#fbbf24', A: '#34d399', B: '#60a5fa', C: '#a78bfa', D:
 const formatTime = (s) => s < 1 ? `${Math.round(s * 1000)}ms` : s < 10 ? `${s.toFixed(1)}s` : `${Math.round(s)}s`
 
 // ── TokenStream Component ──
-const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptTokens, toolSteps, timeScale, cumulative, onComplete, streamIndex }) => {
+const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptTokens, toolSteps, timeScale, loopEnabled, onLoopComplete, onComplete, streamIndex }) => {
   const [displayedTokens, setDisplayedTokens] = useState([])
   const [phase, setPhase] = useState('idle')
   const [thinkingTokensGenerated, setThinkingTokensGenerated] = useState(0)
@@ -432,11 +432,17 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
   const [toolResultTokens, setToolResultTokens] = useState(0)
   const [currentToolIdx, setCurrentToolIdx] = useState(-1)
   const [toolLog, setToolLog] = useState([])
+  const [loopCount, setLoopCount] = useState(0)
+  const [cumulativeIn, setCumulativeIn] = useState(0)
+  const [cumulativeOut, setCumulativeOut] = useState(0)
+  const [generation, setGeneration] = useState(0) // bumped to trigger re-run
   const intervalRef = useRef(null)
   const timerRef = useRef(null)
   const timeoutRef = useRef(null)
+  const loopTimeoutRef = useRef(null)
   const startTimeRef = useRef(null)
   const decodeStartRef = useRef(null)
+  const streamAccCtxRef = useRef(0)
   const totalIndexRef = useRef(0)
   const contentRef = useRef(null)
   const rafRef = useRef(null)
@@ -458,17 +464,31 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
     if (intervalRef.current) clearInterval(intervalRef.current)
     if (timerRef.current) clearInterval(timerRef.current)
     if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    if (loopTimeoutRef.current) clearTimeout(loopTimeoutRef.current)
     if (rafRef.current) cancelAnimationFrame(rafRef.current)
   }, [])
 
   useEffect(() => () => clearTimers(), [clearTimers])
 
+  // Self-reset for loop restart (keeps cumulative state)
+  const selfReset = useCallback(() => {
+    clearTimers()
+    setDisplayedTokens([]); setPhase('idle'); setThinkingTokensGenerated(0)
+    setElapsedTime(0); setPrefillElapsed(0); setCompactElapsed(0); setPrefillSize(0)
+    setToolResultTokens(0); setCurrentToolIdx(-1); setToolLog([])
+    totalIndexRef.current = 0; hasStartedRef.current = false
+    startTimeRef.current = null; decodeStartRef.current = null; toolResultsRef.current = 0
+  }, [clearTimers])
+
   useEffect(() => {
     if (isReset) {
       clearTimers()
+      if (loopTimeoutRef.current) clearTimeout(loopTimeoutRef.current)
       setDisplayedTokens([]); setPhase('idle'); setThinkingTokensGenerated(0)
       setElapsedTime(0); setPrefillElapsed(0); setCompactElapsed(0); setPrefillSize(0)
       setToolResultTokens(0); setCurrentToolIdx(-1); setToolLog([])
+      setLoopCount(0); setCumulativeIn(0); setCumulativeOut(0); setGeneration(0)
+      streamAccCtxRef.current = 0
       totalIndexRef.current = 0; hasStartedRef.current = false
       startTimeRef.current = null; decodeStartRef.current = null; toolResultsRef.current = 0
       return
@@ -587,7 +607,34 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
               streamChunk(finalOutput, () => {
                 clearInterval(timerRef.current)
                 if (startTimeRef.current) setElapsedTime(((Date.now() - startTimeRef.current) * ts / 1000).toFixed(1))
-                setPhase('complete'); onComplete(streamIndex)
+                setPhase('complete')
+                onComplete(streamIndex)
+
+                // Per-stream loop: accumulate tallies, grow context, restart
+                if (loopEnabled) {
+                  const toolTok = toolSteps.reduce((s, t) => s + (t.resultTokens || 0) + (t.decodeTokens || 0) + (t.thinkTokens || 0), 0)
+                  const inTok = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current + toolTok
+                  const outTok = effectiveOutput + thinkingBudget
+                  setCumulativeIn(prev => prev + inTok)
+                  setCumulativeOut(prev => prev + outTok)
+                  setLoopCount(prev => prev + 1)
+
+                  // Accumulate context for next loop; compact if >80% of max ctx
+                  const turnTokens = outTok + toolTok
+                  const maxCtx = parseInt(model.maxCtx) * 1000
+                  const nextTotal = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current + turnTokens
+                  if (nextTotal / maxCtx > 0.8) {
+                    streamAccCtxRef.current = Math.round((streamAccCtxRef.current + turnTokens) * 0.2)
+                  } else {
+                    streamAccCtxRef.current += turnTokens
+                  }
+
+                  if (onLoopComplete) onLoopComplete(streamIndex)
+                  loopTimeoutRef.current = setTimeout(() => {
+                    selfReset()
+                    setGeneration(g => g + 1) // trigger effect re-run
+                  }, 300)
+                }
               })
             })
           }
@@ -599,10 +646,10 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         const step = toolSteps[i]
         setCurrentToolIdx(i)
 
-        // First call: prefill user prompt (system tokens already cached in session).
+        // First call: prefill user prompt + accumulated context from prior loops.
         // Subsequent: only new tokens since last call (incremental KV).
         const prefillCtx = i === 0
-          ? promptTokens
+          ? promptTokens + streamAccCtxRef.current
           : lastStepTokens
 
         // Prefill → think → tool-call decode → tool exec → stream output chunk → next
@@ -642,8 +689,8 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
 
       const beginToolLoop = () => {
         if (toolSteps.length === 0) {
-          // System tokens already cached, only prefill user prompt
-          startPrefill(promptTokens, startFinalDecode)
+          // System tokens already cached, prefill user prompt + accumulated context
+          startPrefill(promptTokens + streamAccCtxRef.current, startFinalDecode)
         } else {
           runToolStep(0)
         }
@@ -661,7 +708,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       if (intervalRef.current) clearInterval(intervalRef.current)
       if (timerRef.current) clearInterval(timerRef.current)
     }
-  }, [isRunning, isReset, model, promptTokens, thinkingBudget, effectiveOutput, totalTokens, tokens, toolSteps, timeScale, onComplete, streamIndex, clearTimers])
+  }, [isRunning, isReset, model, promptTokens, thinkingBudget, effectiveOutput, totalTokens, tokens, toolSteps, timeScale, loopEnabled, generation, onComplete, streamIndex, clearTimers, selfReset])
 
   useEffect(() => {
     if (displayedTokens.length > 0 || toolLog.length > 0) scrollToBottom()
@@ -681,7 +728,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
 
   // Context bar — dynamic based on accumulated tool results
   const maxCtxTokens = parseInt(model.maxCtx) * 1000
-  const usedTokens = SYSTEM_TOKENS + promptTokens + toolResultTokens + thinkingBudget + effectiveOutput
+  const usedTokens = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current + toolResultTokens + thinkingBudget + effectiveOutput
   const overflows = usedTokens > maxCtxTokens
   const pct = (n) => Math.min((n / maxCtxTokens) * 100, 100)
   const systemPct = pct(SYSTEM_TOKENS)
@@ -752,7 +799,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       </div>
 
       {hwTotal === 0 && model.costIn != null && (() => {
-        const totalInput = SYSTEM_TOKENS + promptTokens + toolResultTokens + toolSteps.reduce((s, t) => s + (t.resultTokens || 0), 0)
+        const totalInput = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current + toolResultTokens + toolSteps.reduce((s, t) => s + (t.resultTokens || 0), 0)
         const outputTokens = effectiveOutput + thinkingBudget
         const totalToolDecodeTokens = toolSteps.reduce((s, t) => s + (t.decodeTokens || 0) + (t.thinkTokens || 0), 0)
         // Tiered pricing based on context window size, not input tokens
@@ -800,7 +847,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         <div className="stat"><span className="stat-label">Thinking</span><span className={`stat-value ${!model.thinking ? 'stat-dim' : ''}`}>{thinkingLabel}</span></div>
         <div className="stat"><span className="stat-label">Time</span><span className="stat-value">{elapsedTime}s</span></div>
         {rate && <div className="stat"><span className="stat-label">Actual</span><span className="stat-value">{rate} tok/s</span></div>}
-        {cumulative && cumulative.loops > 0 && <div className="stat"><span className="stat-label">Total ({cumulative.loops} runs)</span><span className="stat-value">{(cumulative.input / 1000).toFixed(0)}K in / {(cumulative.output / 1000).toFixed(0)}K out</span></div>}
+        {loopCount > 0 && <div className="stat"><span className="stat-label">Total ({loopCount} runs)</span><span className="stat-value">{(cumulativeIn / 1000).toFixed(0)}K in / {(cumulativeOut / 1000).toFixed(0)}K out</span></div>}
       </div>
 
       <div className="progress-track"><div className="progress-fill" style={{ width: `${totalProgress}%`, background: model.color }} /></div>
@@ -918,9 +965,6 @@ function App() {
   const [timeScale, setTimeScale] = useState(1)
   const [loopEnabled, setLoopEnabled] = useState(false)
   const [completedStreams, setCompletedStreams] = useState(new Set())
-  const [cumulatives, setCumulatives] = useState({})
-  const [accumulatedContext, setAccumulatedContext] = useState(0) // carries forward across loops
-  const pendingLoopRef = useRef(false)
 
   useEffect(() => {
     const onHash = () => setRoute(getHashRoute())
@@ -939,79 +983,22 @@ function App() {
   const toolSteps = useMemo(() => flattenSteps(TOOL_PRESETS[toolPresetIdx].steps), [toolPresetIdx])
 
   const handleExperimentChange = (id) => {
-    pendingLoopRef.current = false
-    setIsRunning(false); setIsReset(true); setCompletedStreams(new Set()); setCumulatives({}); setAccumulatedContext(0)
+    setIsRunning(false); setIsReset(true); setCompletedStreams(new Set())
     navigate(id)
     setTimeout(() => setIsReset(false), 100)
   }
   const handleComplete = useCallback((index) => {
     setCompletedStreams(prev => { const next = new Set(prev); next.add(index); return next })
   }, [])
-  const handleStart = () => { setIsReset(false); setCompletedStreams(new Set()); setAccumulatedContext(0); setIsRunning(true) }
-  const handleReset = () => { pendingLoopRef.current = false; setIsRunning(false); setIsReset(true); setCompletedStreams(new Set()); setCumulatives({}); setAccumulatedContext(0); setTimeout(() => setIsReset(false), 100) }
+  const handleStart = () => { setIsReset(false); setCompletedStreams(new Set()); setIsRunning(true) }
+  const handleReset = () => { setIsRunning(false); setIsReset(true); setCompletedStreams(new Set()); setTimeout(() => setIsReset(false), 100) }
 
   const tokens = useMemo(() => generateText(maxTotalTokens), [maxTotalTokens])
   const allComplete = completedStreams.size >= experiment.models.length
   const controlsDisabled = isRunning && !allComplete
 
-  // Loop: when all complete, accumulate context from this turn, apply compaction, restart
-  useEffect(() => {
-    if (allComplete && loopEnabled && isRunning) {
-      // Tokens generated this turn that become part of next turn's context
-      const toolResultTotal = toolSteps.reduce((s, t) => s + (t.resultTokens || 0) + (t.decodeTokens || 0) + (t.thinkTokens || 0), 0)
-      // Use the max output across models for context growth (conservative)
-      const maxOutput = Math.max(...selectedModels.map(m => Math.round(tokenCount * (m.outputMul || 1)) + (m.thinkingBudget || 0)))
-      const turnTokens = maxOutput + toolResultTotal
 
-      setCumulatives(prev => {
-        const next = { ...prev }
-        selectedModels.forEach((m, i) => {
-          const inputTok = SYSTEM_TOKENS + promptTokens + accumulatedContext + toolResultTotal
-          const outputTok = Math.round(tokenCount * (m.outputMul || 1)) + (m.thinkingBudget || 0)
-          const key = m.id + '-' + i
-          if (!next[key]) next[key] = { loops: 0, input: 0, output: 0 }
-          next[key].loops++
-          next[key].input += inputTok
-          next[key].output += outputTok
-        })
-        return next
-      })
 
-      // Accumulate context: previous turns + this turn's output + tool results
-      // Check if compaction would trigger on next turn
-      const maxCtxAll = Math.max(...selectedModels.map(m => parseInt(m.maxCtx) * 1000))
-      const nextContext = SYSTEM_TOKENS + promptTokens + accumulatedContext + turnTokens
-      const wouldCompact = nextContext / maxCtxAll > 0.8
-
-      setAccumulatedContext(prev => {
-        const newCtx = prev + turnTokens
-        // Compaction reduces accumulated history by 70-90% (keep 10-30%)
-        if (wouldCompact) return Math.round(newCtx * 0.2)
-        return newCtx
-      })
-
-      const timer = setTimeout(() => {
-        setIsRunning(false)
-        setIsReset(true)
-        setCompletedStreams(new Set())
-      }, 300)
-      return () => clearTimeout(timer)
-    }
-  }, [allComplete, loopEnabled, isRunning, selectedModels, promptTokens, tokenCount, toolSteps, accumulatedContext])
-
-  // When reset is active and loop is enabled, clear reset and restart
-  useEffect(() => {
-    if (isReset && loopEnabled && !isRunning) {
-      pendingLoopRef.current = true
-      const t = setTimeout(() => { setIsReset(false) }, 50)
-      return () => clearTimeout(t)
-    }
-    if (!isReset && !isRunning && pendingLoopRef.current) {
-      pendingLoopRef.current = false
-      setCompletedStreams(new Set())
-      setIsRunning(true)
-    }
-  }, [isReset, isRunning, loopEnabled])
 
   const cols = experiment.columns
   const rows = []
@@ -1095,10 +1082,10 @@ function App() {
                     isRunning={isRunning}
                     isReset={isReset}
                     tokenCount={tokenCount}
-                    promptTokens={promptTokens + accumulatedContext}
+                    promptTokens={promptTokens}
                     toolSteps={toolSteps}
                     timeScale={timeScale}
-                    cumulative={cumulatives[model.id + '-' + (start + i)]}
+                    loopEnabled={loopEnabled}
                     onComplete={handleComplete}
                     streamIndex={start + i}
                   />
