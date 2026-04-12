@@ -459,6 +459,8 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
   const cumulativeCostRef = useRef(0)
   const runCostRef = useRef(0)
   const totalSimTimeRef = useRef(0)
+  const totalWallTimeRef = useRef(0)
+  const hiddenTokensRef = useRef(0) // thinking + tool decode tokens (not visible but billed)
   const totalIndexRef = useRef(0)
   const contentRef = useRef(null)
   const rafRef = useRef(null)
@@ -494,7 +496,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
     setToolResultTokens(0); setCurrentToolIdx(-1); setToolLog([]); setOutputCount(0); setWallTime(0)
     totalIndexRef.current = 0; hasStartedRef.current = false
     startTimeRef.current = null; decodeStartRef.current = null; toolResultsRef.current = 0
-    runCostRef.current = 0
+    runCostRef.current = 0; hiddenTokensRef.current = 0
   }, [clearTimers])
 
   useEffect(() => {
@@ -505,7 +507,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       setElapsedTime(0); setPrefillElapsed(0); setCompactElapsed(0); setPrefillSize(0)
       setToolResultTokens(0); setCurrentToolIdx(-1); setToolLog([]); setOutputCount(0); setWallTime(0)
       setLoopCount(0); setCumulativeIn(0); setCumulativeOut(0); setCumulativeCost(0); setGeneration(0)
-      streamAccCtxRef.current = 0; cumulativeCostRef.current = 0; runCostRef.current = 0; totalSimTimeRef.current = 0
+      streamAccCtxRef.current = 0; cumulativeCostRef.current = 0; runCostRef.current = 0; totalSimTimeRef.current = 0; totalWallTimeRef.current = 0; hiddenTokensRef.current = 0
       totalIndexRef.current = 0; hasStartedRef.current = false
       startTimeRef.current = null; decodeStartRef.current = null; toolResultsRef.current = 0
       return
@@ -522,17 +524,16 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
           const wallSec = (Date.now() - startTimeRef.current) / 1000
           const simTime = wallSec * ts
           setElapsedTime(simTime.toFixed(1))
-          setWallTime(wallSec.toFixed(1))
+          setWallTime((totalWallTimeRef.current + wallSec).toFixed(1))
           setOutputCount(totalIndexRef.current)
-          // Compute current run cost from refs (always fresh, no stale closures)
+          // Compute current run cost using billable output (thinking + tool decode + visible)
           if (model.costIn != null) {
             const threshold = model.costInThreshold ?? Infinity
             const useHigh = (parseInt(model.maxCtx) * 1000) > threshold
             const inRate = useHigh && model.costInHigh ? model.costInHigh : model.costIn
             const outRate = useHigh && model.costOutHigh ? model.costOutHigh : model.costOut
             const runIn = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current + toolResultsRef.current
-            const runOut = totalIndexRef.current
-            runCostRef.current = (runIn / 1e6) * inRate + (runOut / 1e6) * outRate
+            runCostRef.current = (runIn / 1e6) * inRate + ((hiddenTokensRef.current + totalIndexRef.current) / 1e6) * outRate
             if (onCostTick) {
               onCostTick(streamIndex, totalSimTimeRef.current + simTime, cumulativeCostRef.current + runCostRef.current)
             }
@@ -576,11 +577,14 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         setThinkingTokensGenerated(0)
         const thinkMs = (thinkCount / model.tokPerSec) * 1000 / ts
         const thinkStart = Date.now()
+        const hiddenBefore = hiddenTokensRef.current
         const tickThink = () => {
           const elapsed = Date.now() - thinkStart
-          setThinkingTokensGenerated(Math.min(Math.floor((elapsed / thinkMs) * thinkCount), thinkCount))
+          const generated = Math.min(Math.floor((elapsed / thinkMs) * thinkCount), thinkCount)
+          setThinkingTokensGenerated(generated)
+          hiddenTokensRef.current = hiddenBefore + generated
           if (elapsed < thinkMs) timeoutRef.current = setTimeout(tickThink, 50)
-          else { setThinkingTokensGenerated(thinkCount); next() }
+          else { setThinkingTokensGenerated(thinkCount); hiddenTokensRef.current = hiddenBefore + thinkCount; next() }
         }
         tickThink()
       }
@@ -677,9 +681,11 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
                     streamAccCtxRef.current += turnTokens
                   }
 
-                  // Accumulate sim time before reset clears startTimeRef
+                  // Accumulate time before reset clears startTimeRef
                   if (startTimeRef.current) {
-                    totalSimTimeRef.current += (Date.now() - startTimeRef.current) * ts / 1000
+                    const wallSec = (Date.now() - startTimeRef.current) / 1000
+                    totalSimTimeRef.current += wallSec * ts
+                    totalWallTimeRef.current += wallSec
                   }
                   runCostRef.current = 0
 
@@ -716,6 +722,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
               setPhase('tool-decode')
               const decodeMs = (step.decodeTokens / model.tokPerSec) * 1000 / ts
               timeoutRef.current = setTimeout(() => {
+                hiddenTokensRef.current += step.decodeTokens
                 setPhase('tool-exec')
                 const logEntries = step.parallel
                   ? step.parallel.map(l => ({ label: l, tokens: 0 }))
