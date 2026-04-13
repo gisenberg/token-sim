@@ -68,6 +68,7 @@ const MODELS = [
   // costIn/costOut: $ per 1M tokens (input/output)
   { id: 'cloud-opus46-1m', name: 'Claude Opus 4.6', quant: '1M context', hardware: 'Anthropic API', tier: 'S', tokPerSec: 48, prefillRate: 15000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 1500, effortProvider: 'anthropic', outputMul: 1, costIn: 5, costOut: 25, fast: { tokPerSec: 120, costIn: 30, costOut: 150 }, color: '#d97706', hwColor: '#fbbf24' },
   { id: 'cloud-sonnet46', name: 'Claude Sonnet 4.6', quant: '1M context', hardware: 'Anthropic API', tier: 'S', tokPerSec: 66, prefillRate: 25000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 1200, effortProvider: 'anthropic', outputMul: 1, costIn: 3, costOut: 15, color: '#d97706', hwColor: '#fbbf24' },
+  { id: 'cloud-opus45', name: 'Claude Opus 4.5', quant: '200K context', hardware: 'Anthropic API', tier: 'A', tokPerSec: 52, prefillRate: 15000, weightGB: 0, kvPerTokKB: 0, maxCtx: '200K', quality: 'frontier', thinking: true, thinkingBudget: 1500, effortProvider: 'anthropic', outputMul: 1, costIn: 5, costOut: 25, color: '#d97706', hwColor: '#fbbf24' },
   { id: 'cloud-haiku45', name: 'Claude Haiku 4.5', quant: '200K context', hardware: 'Anthropic API', tier: 'A', tokPerSec: 92, prefillRate: 60000, weightGB: 0, kvPerTokKB: 0, maxCtx: '200K', quality: 'good', thinking: false, thinkingBudget: 0, outputMul: 1, costIn: 1, costOut: 5, color: '#d97706', hwColor: '#fbbf24' },
   // Google API
   { id: 'cloud-gemini31pro', name: 'Gemini 3.1 Pro', quant: '1M context', hardware: 'Google API', tier: 'S', tokPerSec: 126, prefillRate: 20000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 1500, effortProvider: 'openai', outputMul: 1, costIn: 2, costOut: 12, color: '#059669', hwColor: '#34d399' },
@@ -101,7 +102,7 @@ const EXPERIMENT_CATEGORIES = [
 
 const EXPERIMENTS = [
   // Cloud API
-  { id: 'anthropic-lineup', category: 'cloud', name: 'Anthropic Lineup', desc: 'Opus 4.6 vs Sonnet 4.6 vs Haiku 4.5', columns: 3, models: ['cloud-opus46-1m','cloud-sonnet46','cloud-haiku45'] },
+  { id: 'anthropic-lineup', category: 'cloud', name: 'Anthropic Lineup', desc: 'Opus 4.6, Opus 4.5, Sonnet 4.6, Haiku 4.5', columns: 2, models: ['cloud-opus46-1m','cloud-opus45','cloud-sonnet46','cloud-haiku45'] },
   { id: 'google-lineup', category: 'cloud', name: 'Google Lineup', desc: 'Gemini 3.1 Pro vs 3 Flash vs 2.5 Pro', columns: 3, models: ['cloud-gemini31pro','cloud-gemini3flash','cloud-gemini25pro'] },
   { id: 'openai-lineup', category: 'cloud', name: 'OpenAI Lineup', desc: 'GPT-5.4 family + Codex models', columns: 3, models: ['cloud-gpt54','cloud-gpt54-pro','cloud-gpt54-mini','cloud-gpt54-nano','cloud-gpt53-codex','cloud-o3mini'] },
   { id: 'cloud-all', category: 'cloud', name: 'Cloud Frontier', desc: 'Top model from each provider', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-sonnet46','cloud-gemini3flash','cloud-gpt54'] },
@@ -1133,6 +1134,7 @@ const EFFORT_LEVELS = {
 // Subagent routing: default delegate + options per model
 const SUBAGENT_ROUTING = {
   'cloud-opus46-1m': { default: 'cloud-sonnet46', options: ['cloud-sonnet46', 'cloud-haiku45'] },
+  'cloud-opus45': { default: 'cloud-sonnet46', options: ['cloud-sonnet46', 'cloud-haiku45'] },
   'cloud-sonnet46': { default: 'cloud-haiku45', options: ['cloud-haiku45'] },
   'cloud-gpt54': { default: 'cloud-gpt53-codex', options: ['cloud-gpt53-codex', 'cloud-gpt54-mini', 'cloud-gpt51-codex-mini'] },
   'cloud-gpt54-pro': { default: 'cloud-gpt54', options: ['cloud-gpt54', 'cloud-gpt53-codex', 'cloud-gpt54-mini'] },
