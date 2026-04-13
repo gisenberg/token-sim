@@ -1217,7 +1217,7 @@ const MetricsChart = ({ series, models, hasCloud }) => {
           const ty = Math.max(mousePos.y - 8, 14)
           return <g>
             <rect x={tx - 4} y={ty - 12} width={120} height={16} rx={3} fill="var(--bg-card)" opacity="0.95" />
-            <text x={tx} y={ty} className="chart-tooltip" fill={models[hovered].chartColor}>{models[hovered].name}: {ct.fmt(val)}</text>
+            <text x={tx} y={ty} className="chart-tooltip" fill={models[hovered].chartColor}>{models[hovered].displayName}: {ct.fmt(val)}</text>
           </g>
         })()}
       </svg>
@@ -1226,7 +1226,7 @@ const MetricsChart = ({ series, models, hasCloud }) => {
           const model = models[key]
           if (!model) return null
           return <span key={key} className={`chart-legend-item ${hovered === key ? 'chart-legend-active' : ''} ${hovered && hovered !== key ? 'chart-legend-dim' : ''}`} onMouseEnter={() => setHovered(key)} onMouseLeave={() => setHovered(null)}>
-            <span className="chart-legend-dot" style={{ background: model.chartColor }} />{model.name}
+            <span className="chart-legend-dot" style={{ background: model.chartColor }} />{model.displayName}
           </span>
         })}
       </div>
@@ -1375,7 +1375,14 @@ function App() {
   const hasCloudModels = selectedModels.some(m => m.costIn != null)
   const chartModelMap = useMemo(() => {
     const map = {}
-    selectedModels.forEach((m, i) => { map[i.toString()] = { ...m, chartColor: CHART_COLORS[i % CHART_COLORS.length] } })
+    const nameCount = {}
+    selectedModels.forEach(m => { nameCount[m.name] = (nameCount[m.name] ?? 0) + 1 })
+    const nameIdx = {}
+    selectedModels.forEach((m, i) => {
+      nameIdx[m.name] = (nameIdx[m.name] ?? 0) + 1
+      const suffix = nameCount[m.name] > 1 ? ` #${nameIdx[m.name]}` : ''
+      map[i.toString()] = { ...m, chartColor: CHART_COLORS[i % CHART_COLORS.length], displayName: m.name + suffix }
+    })
     return map
   }, [selectedModels])
   const controlsDisabled = isRunning && !allComplete
