@@ -729,15 +729,20 @@ const TokenStream = ({ model, tokens, isRunning, isReset, isPaused, tokenCount, 
         setSubagentTokensIn(prev => prev + waveInputTotal)
         setSubagentTokensOut(prev => prev + waveOutputTotal)
 
-        // Add subagent costs to hidden tokens (they're billed output)
-        hiddenTokensRef.current += waveOutputTotal
-
         // Subagent results flow back as context for main agent
         toolResultsRef.current += waveOutputTotal
         setToolResultTokens(toolResultsRef.current)
 
-        // Add to tool log with delegate model info
+        // Bill subagent tokens at the DELEGATE model's rates, not the main agent's
         const delegateModel = delegateId ? MODELS.find(m => m.id === delegateId) : null
+        if (delegateModel && delegateModel.costIn != null) {
+          const delegateCost = (waveInputTotal / 1e6) * delegateModel.costIn + (waveOutputTotal / 1e6) * delegateModel.costOut
+          cumulativeCostRef.current += delegateCost
+          setCumulativeCost(prev => prev + delegateCost)
+        } else {
+          // No delegate — bill at main agent's rate via hidden tokens
+          hiddenTokensRef.current += waveOutputTotal
+        }
         const delegateLabel = delegateModel ? ` via ${delegateModel.name}` : ''
         setToolLog(prev => [...prev, { label: `${wave.label} (${wave.count} agents${delegateLabel})`, tokens: waveOutputTotal, subagent: true }])
 
