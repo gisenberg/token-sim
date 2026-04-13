@@ -1298,7 +1298,7 @@ function App() {
   const [route, setRoute] = useState(getHashRoute)
   const [isRunning, setIsRunning] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
-  const [customModels, setCustomModels] = useState(['cloud-opus46-1m', 'cloud-gemini31pro', 'cloud-gpt54'])
+  const [customModels, setCustomModels] = useState([])
   const [modelPickerSlot, setModelPickerSlot] = useState(null) // null=closed, number=slot index, 'new'=adding
   const [costSeries, setCostSeries] = useState({})
   const costSeriesRef = useRef({})
