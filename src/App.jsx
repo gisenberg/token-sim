@@ -507,7 +507,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
   if (longCtxMode && model.longCtx) effectiveModel = { ...effectiveModel, maxCtx: model.longCtx.maxCtx, costIn: model.longCtx.costIn, costOut: model.longCtx.costOut, quant: '1M context' }
   else if (model.longCtx && !longCtxMode) effectiveModel = { ...effectiveModel, quant: '272K context' }
   const thinkingBudget = effectiveModel.thinkingBudget
-  const effectiveOutput = Math.round(tokenCount * (model.outputMul || 1))
+  const effectiveOutput = Math.round(tokenCount * (effectiveModel.outputMul || 1))
   const totalTokens = thinkingBudget + effectiveOutput
   const tsRef = useRef(timeScale)
   tsRef.current = timeScale
@@ -597,7 +597,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       const fullUsed = SYSTEM_TOKENS + promptTokens + totalToolResult + thinkingBudget + effectiveOutput
       const needsCompact = fullUsed / maxCtx > 0.8
       const compactTokens = needsCompact ? Math.max(0, fullUsed - maxCtx * 0.6) : 0
-      const compactMs = needsCompact ? (compactTokens / (model.prefillRate * 0.5)) * 1000 : 0
+      const compactMs = needsCompact ? (compactTokens / (emRef.current.prefillRate * 0.5)) * 1000 : 0
 
       // Animate a progress bar over durationMs, then call next()
       const getTs = () => tsRef.current || 1
@@ -679,7 +679,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         setPhase('prefill')
         setPrefillElapsed(0)
         setPrefillSize(contextSize)
-        const prefillMs = (contextSize / model.prefillRate) * 1000
+        const prefillMs = (contextSize / emRef.current.prefillRate) * 1000
         animateBar(setPrefillElapsed, prefillMs, next)
       }
 
@@ -706,7 +706,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         // Each subagent: prefill its context + run its tools + generate output
         // Cost: count × (contextPerAgent input + outputPerAgent output)
         // Wall time: subagent inference time (context/prefillRate + tools + output/tokPerSec)
-        const agentPrefillMs = (wave.contextPerAgent / model.prefillRate) * 1000
+        const agentPrefillMs = (wave.contextPerAgent / emRef.current.prefillRate) * 1000
         const agentToolMs = (wave.toolsPerAgent ?? 3) * 500 // ~500ms per tool avg
         const agentDecodeMs = (wave.outputPerAgent / emRef.current.tokPerSec) * 1000
         const waveMs = (agentPrefillMs + agentToolMs + agentDecodeMs) / getTs()
@@ -954,7 +954,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       <div className="hw-row">
         <span className="hw-badge" style={{ color: model.hwColor }}>{model.hardware}</span>
         <span className="hw-spec">{effectiveModel.tokPerSec} tok/s</span>
-        <span className="hw-spec">{model.maxCtx} ctx</span>
+        <span className="hw-spec">{effectiveModel.maxCtx} ctx</span>
         <span className="hw-spec">{model.quality}</span>
       </div>
 
@@ -1032,7 +1032,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       )}
 
       {phase === 'prefill' && (
-        <div className="prefill-banner"><div className="prefill-bar"><div className="prefill-bar-fill" style={{ width: `${prefillElapsed * 100}%`, background: model.color }} /></div><span className="prefill-label">{toolResultTokens > 0 ? 'Incremental prefill' : 'Prefilling'} {prefillSize.toLocaleString()} tokens @ {model.prefillRate} tok/s — {formatTime(prefillSize / model.prefillRate)}</span></div>
+        <div className="prefill-banner"><div className="prefill-bar"><div className="prefill-bar-fill" style={{ width: `${prefillElapsed * 100}%`, background: model.color }} /></div><span className="prefill-label">{toolResultTokens > 0 ? 'Incremental prefill' : 'Prefilling'} {prefillSize.toLocaleString()} tokens @ {emRef.current.prefillRate} tok/s — {formatTime(prefillSize / emRef.current.prefillRate)}</span></div>
       )}
 
       {(phase === 'tool-decode' || phase === 'tool-exec') && currentStep && (
