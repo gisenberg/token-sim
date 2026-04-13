@@ -1375,9 +1375,9 @@ function App() {
     <div className="app-layout">
       <nav className="experiment-nav">
         <div className="nav-title">Experiments</div>
-        <button className={`nav-item nav-custom ${isCustom && route.page === 'sim' ? 'active' : ''}`} onClick={() => handleExperimentChange('custom')}>
-          <span className="nav-item-name">Build Your Own</span>
-        </button>
+        <div className="nav-custom-wrap">
+          <button className={`nav-custom ${isCustom && route.page === 'sim' ? 'active' : ''}`} onClick={() => handleExperimentChange('custom')}>Build Your Own</button>
+        </div>
         {EXPERIMENT_CATEGORIES.map(cat => (
           <div key={cat.id} className="nav-category">
             <div className="nav-cat-label">{cat.label}</div>

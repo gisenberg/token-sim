@@ -581,21 +581,28 @@
 
 /* ── Nav Custom Button ── */
 
-.nav-custom {
-  width: auto;
-  margin: 4px 16px 8px;
-  padding: 7px 12px;
-  border: 1px dashed var(--border);
-  border-radius: 6px;
-  justify-content: center;
-  font-weight: 500;
-  box-sizing: border-box;
+.nav-custom-wrap {
+  padding: 8px 16px 8px;
+  border-bottom: 1px solid var(--border);
 }
 
-.nav-custom:hover:not(:disabled) {
-  border-color: var(--border-light);
-  border-style: solid;
+.nav-custom {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.75rem;
+  font-family: var(--sans);
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 0.15s, color 0.15s;
 }
+
+.nav-custom:hover { border-color: var(--border-light); color: var(--text-bright); }
+.nav-custom.active { border-color: var(--text); color: var(--text-heading); border-style: solid; }
 
 .card-status {
   font-size: 0.65rem;
