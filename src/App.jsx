@@ -964,7 +964,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, isPaused, tokenCount, 
             <span className="model-name">{model.name}</span>
           </div>
           <span className="model-quant">
-            {effectiveModel.quant}
+            {hwTotal > 0 && effectiveModel.quant}
             <a className="citation-link" href={CITATIONS[model.hardware]} target="_blank" rel="noopener noreferrer" title="View benchmark data">cite</a>
             {model.fast && <label className="fast-toggle"><input type="checkbox" checked={fastMode} onChange={(e) => setFastMode(e.target.checked)} />Fast</label>}
             {model.longCtx && <label className="fast-toggle"><input type="checkbox" checked={longCtxMode} onChange={(e) => setLongCtxMode(e.target.checked)} />{model.longCtx.label}</label>}
@@ -982,7 +982,6 @@ const TokenStream = ({ model, tokens, isRunning, isReset, isPaused, tokenCount, 
       <div className="hw-row">
         <span className="hw-badge" style={{ color: model.hwColor }}>{model.hardware}</span>
         <span className="hw-spec">{effectiveModel.tokPerSec} tok/s</span>
-        <span className="hw-spec">{effectiveModel.maxCtx} ctx</span>
         <span className="hw-spec">{model.quality}</span>
       </div>
 
