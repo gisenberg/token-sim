@@ -78,6 +78,7 @@ const MODELS = [
   { id: 'cloud-o3mini', name: 'o3-mini (high)', quant: '200K context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 152, prefillRate: 30000, weightGB: 0, kvPerTokKB: 0, maxCtx: '200K', quality: 'frontier', thinking: true, thinkingBudget: 2000, effortProvider: 'openai', outputMul: 1, costIn: 1.1, costOut: 4.4, color: '#4f46e5', hwColor: '#818cf8' },
   { id: 'cloud-gpt53-codex', name: 'GPT-5.3 Codex', quant: '400K context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 71, prefillRate: 20000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'frontier', thinking: true, thinkingBudget: 2000, effortProvider: 'openai', outputMul: 1, costIn: 1.75, costOut: 7, color: '#4f46e5', hwColor: '#818cf8' },
   { id: 'cloud-gpt54', name: 'GPT-5.4', quant: '272K context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 83, prefillRate: 25000, weightGB: 0, kvPerTokKB: 0, maxCtx: '272K', quality: 'frontier', thinking: true, thinkingBudget: 1500, effortProvider: 'openai', outputMul: 1, costIn: 2.5, costOut: 15, longCtx: { maxCtx: '1000K', costIn: 5, costOut: 22.5, label: '1M Context' }, color: '#4f46e5', hwColor: '#818cf8' },
+  { id: 'cloud-gpt54-pro', name: 'GPT-5.4 Pro', quant: '1M context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 43, prefillRate: 15000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier+', thinking: true, thinkingBudget: 3000, effortProvider: 'openai', outputMul: 1, costIn: 30, costOut: 180, color: '#4f46e5', hwColor: '#818cf8' },
   { id: 'cloud-gpt54-mini', name: 'GPT-5.4 mini', quant: '400K context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 168, prefillRate: 40000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'frontier', thinking: true, thinkingBudget: 800, effortProvider: 'openai', outputMul: 1, costIn: 0.4, costOut: 1.6, color: '#4f46e5', hwColor: '#818cf8' },
   { id: 'cloud-gpt54-nano', name: 'GPT-5.4 nano', quant: '400K context', hardware: 'OpenAI API', tier: 'A', tokPerSec: 184, prefillRate: 50000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'good', thinking: true, thinkingBudget: 500, effortProvider: 'openai', outputMul: 1, costIn: 0.2, costOut: 1.25, color: '#4f46e5', hwColor: '#818cf8' },
   { id: 'cloud-gpt51-codex-mini', name: 'GPT-5.1 Codex mini', quant: '400K context', hardware: 'OpenAI API', tier: 'A', tokPerSec: 185, prefillRate: 45000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'good', thinking: true, thinkingBudget: 800, effortProvider: 'openai', outputMul: 1, costIn: 1.25, costOut: 10, color: '#4f46e5', hwColor: '#818cf8' },
@@ -102,7 +103,7 @@ const EXPERIMENTS = [
   // Cloud API
   { id: 'anthropic-lineup', category: 'cloud', name: 'Anthropic Lineup', desc: 'Opus 4.6 vs Sonnet 4.6 vs Haiku 4.5', columns: 3, models: ['cloud-opus46-1m','cloud-sonnet46','cloud-haiku45'] },
   { id: 'google-lineup', category: 'cloud', name: 'Google Lineup', desc: 'Gemini 3.1 Pro vs 3 Flash vs 2.5 Pro', columns: 3, models: ['cloud-gemini31pro','cloud-gemini3flash','cloud-gemini25pro'] },
-  { id: 'openai-lineup', category: 'cloud', name: 'OpenAI Lineup', desc: 'GPT-5.4 family + Codex models', columns: 3, models: ['cloud-gpt54','cloud-gpt54-mini','cloud-gpt54-nano','cloud-gpt53-codex','cloud-gpt51-codex-mini','cloud-o3mini'] },
+  { id: 'openai-lineup', category: 'cloud', name: 'OpenAI Lineup', desc: 'GPT-5.4 family + Codex models', columns: 3, models: ['cloud-gpt54','cloud-gpt54-pro','cloud-gpt54-mini','cloud-gpt54-nano','cloud-gpt53-codex','cloud-o3mini'] },
   { id: 'cloud-all', category: 'cloud', name: 'Cloud Frontier', desc: 'Top model from each provider', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-sonnet46','cloud-gemini3flash','cloud-gpt54'] },
 { id: 'cloud-speed', category: 'cloud', name: 'Cloud Speed Demons', desc: 'Fastest output from each provider', columns: 3, models: ['cloud-haiku45','cloud-gemini3flash','cloud-gpt54-nano'] },
   // Free Tier
@@ -1128,6 +1129,7 @@ const SUBAGENT_ROUTING = {
   'cloud-opus46-1m': { default: 'cloud-sonnet46', options: ['cloud-sonnet46', 'cloud-haiku45'] },
   'cloud-sonnet46': { default: 'cloud-haiku45', options: ['cloud-haiku45'] },
   'cloud-gpt54': { default: 'cloud-gpt53-codex', options: ['cloud-gpt53-codex', 'cloud-gpt54-mini', 'cloud-gpt51-codex-mini'] },
+  'cloud-gpt54-pro': { default: 'cloud-gpt54', options: ['cloud-gpt54', 'cloud-gpt53-codex', 'cloud-gpt54-mini'] },
   'cloud-gpt54-mini': { default: 'cloud-gpt51-codex-mini', options: ['cloud-gpt51-codex-mini', 'cloud-gpt54-nano'] },
   'cloud-gemini31pro': { default: 'cloud-gemini3flash', options: ['cloud-gemini3flash', 'cloud-gemini25pro'] },
   'cloud-gemini25pro': { default: 'cloud-gemini3flash', options: ['cloud-gemini3flash'] },
