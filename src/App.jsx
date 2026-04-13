@@ -470,6 +470,8 @@ const TokenStream = ({ model, tokens, isRunning, isReset, isPaused, tokenCount, 
   const [fastMode, setFastMode] = useState(false)
   const [longCtxMode, setLongCtxMode] = useState(true)
   const [effortLevel, setEffortLevel] = useState('high')
+  const routing = SUBAGENT_ROUTING[model.id]
+  const [delegateId, setDelegateId] = useState(routing?.default ?? null)
   const [activeSubagents, setActiveSubagents] = useState(0)
   const [subagentWaveIdx, setSubagentWaveIdx] = useState(-1)
   const [subagentTokensIn, setSubagentTokensIn] = useState(0)
@@ -734,8 +736,8 @@ const TokenStream = ({ model, tokens, isRunning, isReset, isPaused, tokenCount, 
         setToolResultTokens(toolResultsRef.current)
 
         // Add to tool log with delegate model info
-        const delegate = SUBAGENT_DELEGATES[model.id]
-        const delegateLabel = delegate ? ` via ${delegate.label}` : ''
+        const delegateModel = delegateId ? MODELS.find(m => m.id === delegateId) : null
+        const delegateLabel = delegateModel ? ` via ${delegateModel.name}` : ''
         setToolLog(prev => [...prev, { label: `${wave.label} (${wave.count} agents${delegateLabel})`, tokens: waveOutputTotal, subagent: true }])
 
         // Animate the wave duration
@@ -957,8 +959,11 @@ const TokenStream = ({ model, tokens, isRunning, isReset, isPaused, tokenCount, 
             <a className="citation-link" href={CITATIONS[model.hardware]} target="_blank" rel="noopener noreferrer" title="View benchmark data">cite</a>
             {model.fast && <label className="fast-toggle"><input type="checkbox" checked={fastMode} onChange={(e) => setFastMode(e.target.checked)} />Fast</label>}
             {model.longCtx && <label className="fast-toggle"><input type="checkbox" checked={longCtxMode} onChange={(e) => setLongCtxMode(e.target.checked)} />{model.longCtx.label}</label>}
-            {model.effortProvider && <select className="effort-select" value={effortLevel} onChange={(e) => setEffortLevel(e.target.value)}>
+            {model.effortProvider && <select className="effort-select" value={effortLevel} onChange={(e) => setEffortLevel(e.target.value)} title="Reasoning effort">
               {(EFFORT_LEVELS[model.effortProvider] ?? []).map(l => <option key={l.id} value={l.id}>{l.label}</option>)}
+            </select>}
+            {routing && <select className="effort-select" value={delegateId ?? ''} onChange={(e) => setDelegateId(e.target.value)} title="Subagent delegate model">
+              {routing.options.map(oid => { const m = MODELS.find(x => x.id === oid); return m ? <option key={oid} value={oid}>{m.name}</option> : null })}
             </select>}
           </span>
         </div>
@@ -1118,13 +1123,16 @@ const EFFORT_LEVELS = {
 }
 
 // Subagent delegate models: main agent may route to cheaper/faster models
-const SUBAGENT_DELEGATES = {
-  'cloud-opus46-1m': { id: 'cloud-haiku45', label: 'Haiku 4.5' },
-  'cloud-sonnet46': { id: 'cloud-haiku45', label: 'Haiku 4.5' },
-  'cloud-gpt54': { id: 'cloud-gpt53-codex', label: 'GPT-5.3 Codex' },
-  'cloud-gpt54-mini': { id: 'cloud-gpt51-codex-mini', label: 'GPT-5.1 Codex mini' },
-  'cloud-gemini31pro': { id: 'cloud-gemini3flash', label: 'Gemini 3 Flash' },
-  'cloud-gemini25pro': { id: 'cloud-gemini3flash', label: 'Gemini 3 Flash' },
+// Subagent routing: default delegate + options per model
+const SUBAGENT_ROUTING = {
+  'cloud-opus46-1m': { default: 'cloud-sonnet46', options: ['cloud-sonnet46', 'cloud-haiku45'] },
+  'cloud-sonnet46': { default: 'cloud-haiku45', options: ['cloud-haiku45'] },
+  'cloud-gpt54': { default: 'cloud-gpt53-codex', options: ['cloud-gpt53-codex', 'cloud-gpt54-mini', 'cloud-gpt51-codex-mini'] },
+  'cloud-gpt54-mini': { default: 'cloud-gpt51-codex-mini', options: ['cloud-gpt51-codex-mini', 'cloud-gpt54-nano'] },
+  'cloud-gemini31pro': { default: 'cloud-gemini3flash', options: ['cloud-gemini3flash', 'cloud-gemini25pro'] },
+  'cloud-gemini25pro': { default: 'cloud-gemini3flash', options: ['cloud-gemini3flash'] },
+  'cloud-o3mini': { default: 'cloud-gpt51-codex-mini', options: ['cloud-gpt51-codex-mini', 'cloud-gpt54-nano'] },
+  'cloud-gpt53-codex': { default: 'cloud-gpt51-codex-mini', options: ['cloud-gpt51-codex-mini'] },
 }
 
 const formatDuration = (s) => {
