@@ -1271,6 +1271,7 @@ function AboutPage() {
 const getHashRoute = () => {
   const hash = window.location.hash.slice(1) // remove #
   if (hash === 'about') return { page: 'about', experiment: null }
+  if (hash === 'custom') return { page: 'sim', experiment: 'custom' }
   const exp = EXPERIMENTS.find(e => e.id === hash)
   return { page: 'sim', experiment: exp ? hash : 'cloud-all' }
 }
