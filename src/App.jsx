@@ -343,7 +343,8 @@ const renderMarkdown = (text) => {
 }
 
 // ── Constants ──
-const SYSTEM_TOKENS = 12000
+// System prompt + tool schemas: measured ~18K for Claude Code with MCP tools
+const SYSTEM_TOKENS = 18000
 
 // Prompt context = conversation history + current turn content (system tokens separate).
 // Grows ~1-20K per turn depending on tool intensity. Compaction resets accumulation.
@@ -372,35 +373,35 @@ const OUTPUT_PRESETS = [
 const TOOL_PRESETS = [
   { label: 'No tool calls', steps: [], desc: 'Single inference, no agent loop' },
   { label: 'Light agent (3)', steps: [
-    { label: 'Read src/db/pool.ts', thinkTokens: 200, decodeTokens: 50, execMs: 200, resultTokens: 800 },
-    { label: 'Grep "acquire" in src/', thinkTokens: 150, decodeTokens: 40, execMs: 300, resultTokens: 400 },
-    { label: 'Edit src/db/pool.ts', thinkTokens: 400, decodeTokens: 80, execMs: 100, resultTokens: 200 },
+    { label: 'Read src/db/pool.ts', thinkTokens: 200, decodeTokens: 40, execMs: 50, resultTokens: 800 },
+    { label: 'Grep "acquire" in src/', thinkTokens: 150, decodeTokens: 35, execMs: 100, resultTokens: 400 },
+    { label: 'Edit src/db/pool.ts', thinkTokens: 400, decodeTokens: 400, execMs: 80, resultTokens: 200 },
   ], desc: 'Read, search, edit' },
   { label: 'Standard agent (6)', steps: [
-    { label: 'Read src/db/pool.ts', thinkTokens: 200, decodeTokens: 50, execMs: 200, resultTokens: 800 },
+    { label: 'Read src/db/pool.ts', thinkTokens: 200, decodeTokens: 40, execMs: 50, resultTokens: 800 },
     [
-      { label: 'Read src/db/types.ts', thinkTokens: 100, decodeTokens: 40, execMs: 200, resultTokens: 600 },
-      { label: 'Grep "Connection" in src/', thinkTokens: 100, decodeTokens: 45, execMs: 300, resultTokens: 500 },
+      { label: 'Read src/db/types.ts', thinkTokens: 100, decodeTokens: 35, execMs: 50, resultTokens: 600 },
+      { label: 'Grep "Connection" in src/', thinkTokens: 100, decodeTokens: 35, execMs: 100, resultTokens: 500 },
     ],
-    { label: 'Edit src/db/pool.ts', thinkTokens: 500, decodeTokens: 80, execMs: 100, resultTokens: 200 },
-    { label: 'Run npm test', thinkTokens: 100, decodeTokens: 30, execMs: 3000, resultTokens: 1200 },
-    { label: 'Edit src/db/pool.test.ts', thinkTokens: 400, decodeTokens: 90, execMs: 100, resultTokens: 300 },
+    { label: 'Edit src/db/pool.ts', thinkTokens: 500, decodeTokens: 500, execMs: 80, resultTokens: 200 },
+    { label: 'Run npm test', thinkTokens: 100, decodeTokens: 30, execMs: 8000, resultTokens: 2000 },
+    { label: 'Edit src/db/pool.test.ts', thinkTokens: 400, decodeTokens: 600, execMs: 80, resultTokens: 300 },
   ], desc: 'Read, search, edit, test, fix' },
   { label: 'Deep exploration (10)', steps: [
-    { label: 'Glob src/**/*.ts', thinkTokens: 100, decodeTokens: 30, execMs: 100, resultTokens: 300 },
+    { label: 'Glob src/**/*.ts', thinkTokens: 100, decodeTokens: 25, execMs: 30, resultTokens: 300 },
     [
-      { label: 'Read src/db/pool.ts', thinkTokens: 80, decodeTokens: 50, execMs: 200, resultTokens: 800 },
-      { label: 'Read src/db/types.ts', thinkTokens: 80, decodeTokens: 40, execMs: 200, resultTokens: 600 },
-      { label: 'Read src/db/migrations.ts', thinkTokens: 80, decodeTokens: 45, execMs: 200, resultTokens: 900 },
+      { label: 'Read src/db/pool.ts', thinkTokens: 80, decodeTokens: 40, execMs: 50, resultTokens: 800 },
+      { label: 'Read src/db/types.ts', thinkTokens: 80, decodeTokens: 35, execMs: 50, resultTokens: 600 },
+      { label: 'Read src/db/migrations.ts', thinkTokens: 80, decodeTokens: 40, execMs: 50, resultTokens: 900 },
     ],
-    { label: 'Grep "acquire" in src/', thinkTokens: 150, decodeTokens: 40, execMs: 300, resultTokens: 500 },
-    { label: 'Read src/server/handler.ts', thinkTokens: 150, decodeTokens: 50, execMs: 200, resultTokens: 700 },
+    { label: 'Grep "acquire" in src/', thinkTokens: 150, decodeTokens: 35, execMs: 100, resultTokens: 500 },
+    { label: 'Read src/server/handler.ts', thinkTokens: 150, decodeTokens: 40, execMs: 50, resultTokens: 700 },
     [
-      { label: 'Edit src/db/pool.ts', thinkTokens: 300, decodeTokens: 80, execMs: 100, resultTokens: 200 },
-      { label: 'Edit src/db/pool.test.ts', thinkTokens: 300, decodeTokens: 90, execMs: 100, resultTokens: 300 },
+      { label: 'Edit src/db/pool.ts', thinkTokens: 300, decodeTokens: 500, execMs: 80, resultTokens: 200 },
+      { label: 'Edit src/db/pool.test.ts', thinkTokens: 300, decodeTokens: 600, execMs: 80, resultTokens: 300 },
     ],
-    { label: 'Run npm test', thinkTokens: 100, decodeTokens: 30, execMs: 3000, resultTokens: 1200 },
-    { label: 'Read test output', thinkTokens: 100, decodeTokens: 30, execMs: 100, resultTokens: 400 },
+    { label: 'Run npm test', thinkTokens: 100, decodeTokens: 30, execMs: 12000, resultTokens: 2500 },
+    { label: 'Read test output', thinkTokens: 100, decodeTokens: 30, execMs: 50, resultTokens: 400 },
   ], desc: 'Full codebase exploration, multi-file edit, test' },
 ]
 
