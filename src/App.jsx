@@ -604,6 +604,8 @@ const TokenStream = ({ model, tokens, isRunning, isReset, isPaused, tokenCount, 
         }
       }, 200)
 
+      const isCloud = HW_MEM[model.hardware] === 0
+      const waves = isCloud ? (subagentWaves ?? []) : []
       const maxCtx = parseInt(emRef.current.maxCtx) * 1000
       const totalToolResult = toolSteps.reduce((s, t) => s + t.resultTokens + t.decodeTokens, 0)
       const totalSubagentResult = waves.reduce((s, w) => s + w.count * w.outputPerAgent, 0)
@@ -705,10 +707,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, isPaused, tokenCount, 
       let lastStepTokens = 0
 
       // Run subagent waves sequentially, then call next()
-      // Subagents only run on cloud (concurrent API). Local hardware has a single
-      // inference slot — subagents would serialize and defeat the purpose.
-      const isCloud = HW_MEM[model.hardware] === 0
-      const waves = isCloud ? (subagentWaves ?? []) : []
+      // waves already defined above
       const runSubagentWave = (waveIdx, next) => {
         if (waveIdx >= waves.length) { setActiveSubagents(0); setSubagentWaveIdx(-1); next(); return }
         const wave = waves[waveIdx]
