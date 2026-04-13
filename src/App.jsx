@@ -491,7 +491,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
   const totalWallTimeRef = useRef(0)
   const runSimTimeRef = useRef(0)
   const lastTickRef = useRef(0)
-  const highWaterRef = useRef({ cost: 0, input: 0, output: 0 })
+  const loopTransitionRef = useRef(false) // true during the gap between completion and selfReset
   const hiddenTokensRef = useRef(0) // thinking + tool decode tokens (not visible but billed)
   const cumulativeInRef = useRef(0)
   const cumulativeOutRef = useRef(0)
@@ -550,7 +550,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       setElapsedTime(0); setPrefillElapsed(0); setCompactElapsed(0); setPrefillSize(0)
       setToolResultTokens(0); setCurrentToolIdx(-1); setToolLog([]); setOutputCount(0); setWallTime(0); setActiveSubagents(0); setSubagentWaveIdx(-1); setSubagentTokensIn(0); setSubagentTokensOut(0)
       setLoopCount(0); setCumulativeIn(0); setCumulativeOut(0); setCumulativeCost(0); setGeneration(0)
-      streamAccCtxRef.current = 0; cumulativeCostRef.current = 0; runCostRef.current = 0; totalSimTimeRef.current = 0; totalWallTimeRef.current = 0; hiddenTokensRef.current = 0; cumulativeInRef.current = 0; cumulativeOutRef.current = 0; runSimTimeRef.current = 0; lastTickRef.current = 0; highWaterRef.current = { cost: 0, input: 0, output: 0 }
+      streamAccCtxRef.current = 0; cumulativeCostRef.current = 0; runCostRef.current = 0; totalSimTimeRef.current = 0; totalWallTimeRef.current = 0; hiddenTokensRef.current = 0; cumulativeInRef.current = 0; cumulativeOutRef.current = 0; runSimTimeRef.current = 0; lastTickRef.current = 0; loopTransitionRef.current = false
       totalIndexRef.current = 0; hasStartedRef.current = false
       startTimeRef.current = null; decodeStartRef.current = null; toolResultsRef.current = 0
       return
@@ -582,15 +582,12 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
             const outRate = useHigh && em.costOutHigh ? em.costOutHigh : em.costOut
             runCostRef.current = (runIn / 1e6) * inRate + (runOut / 1e6) * outRate
           }
-          if (onCostTick) {
-            const hw = highWaterRef.current
-            const metrics = {
-              cost: Math.max(hw.cost, cumulativeCostRef.current + runCostRef.current),
-              input: Math.max(hw.input, runIn + (cumulativeInRef.current ?? 0)),
-              output: Math.max(hw.output, runOut + (cumulativeOutRef.current ?? 0)),
-            }
-            highWaterRef.current = metrics
-            onCostTick(streamIndex, totalSimTimeRef.current + simTime, metrics)
+          if (onCostTick && !loopTransitionRef.current) {
+            onCostTick(streamIndex, totalSimTimeRef.current + simTime, {
+              cost: cumulativeCostRef.current + runCostRef.current,
+              input: runIn + (cumulativeInRef.current ?? 0),
+              output: runOut + (cumulativeOutRef.current ?? 0),
+            })
           }
         }
       }, 200)
@@ -796,7 +793,8 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
                     streamAccCtxRef.current += turnTokens
                   }
 
-                  // Accumulate time before selfReset clears refs
+                  // Freeze reporting during the gap between completion and selfReset
+                  loopTransitionRef.current = true
                   totalSimTimeRef.current += runSimTimeRef.current
                   if (startTimeRef.current) {
                     totalWallTimeRef.current += (Date.now() - startTimeRef.current) / 1000
@@ -806,6 +804,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
                   if (onLoopComplete) onLoopComplete(streamIndex)
                   loopTimeoutRef.current = setTimeout(() => {
                     selfReset()
+                    loopTransitionRef.current = false
                     setGeneration(g => g + 1) // trigger effect re-run
                   }, 300)
                 }
@@ -993,7 +992,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         const inRate = useHighTier && effectiveModel.costInHigh ? effectiveModel.costInHigh : effectiveModel.costIn
         const outRate = useHighTier && effectiveModel.costOutHigh ? effectiveModel.costOutHigh : effectiveModel.costOut
         // Single source of truth: cumulativeCostRef (completed runs) + runCostRef (in-progress)
-        const totalCost = Math.max(highWaterRef.current.cost, cumulativeCostRef.current + runCostRef.current)
+        const totalCost = cumulativeCostRef.current + runCostRef.current
         const rateLabel = `$${inRate}/$${outRate} per 1M`
         return (
           <div className="cost-row">
