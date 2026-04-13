@@ -77,7 +77,7 @@ const MODELS = [
   { id: 'cloud-gpt41', name: 'GPT-4.1', quant: '1M context', hardware: 'OpenAI API', tier: 'A', tokPerSec: 100, prefillRate: 30000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'good', thinking: false, thinkingBudget: 0, outputMul: 1, costIn: 2, costOut: 8, color: '#4f46e5', hwColor: '#818cf8' },
   { id: 'cloud-o3mini', name: 'o3-mini (high)', quant: '200K context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 152, prefillRate: 30000, weightGB: 0, kvPerTokKB: 0, maxCtx: '200K', quality: 'frontier', thinking: true, thinkingBudget: 2000, outputMul: 1, costIn: 1.1, costOut: 4.4, color: '#4f46e5', hwColor: '#818cf8' },
   { id: 'cloud-gpt53-codex', name: 'GPT-5.3 Codex', quant: '400K context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 71, prefillRate: 20000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'frontier', thinking: true, thinkingBudget: 2000, outputMul: 1, costIn: 1.75, costOut: 7, color: '#4f46e5', hwColor: '#818cf8' },
-  { id: 'cloud-gpt54', name: 'GPT-5.4', quant: '1M context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 83, prefillRate: 25000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 1500, outputMul: 1, costIn: 2.5, costOut: 15, costInHigh: 5, costOutHigh: 22.5, costInThreshold: 272000, color: '#4f46e5', hwColor: '#818cf8' },
+  { id: 'cloud-gpt54', name: 'GPT-5.4', quant: '272K context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 83, prefillRate: 25000, weightGB: 0, kvPerTokKB: 0, maxCtx: '272K', quality: 'frontier', thinking: true, thinkingBudget: 1500, outputMul: 1, costIn: 2.5, costOut: 15, longCtx: { maxCtx: '1000K', costIn: 5, costOut: 22.5, label: '1M Context' }, color: '#4f46e5', hwColor: '#818cf8' },
   { id: 'cloud-gpt54-mini', name: 'GPT-5.4 mini', quant: '400K context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 168, prefillRate: 40000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'frontier', thinking: true, thinkingBudget: 800, outputMul: 1, costIn: 0.4, costOut: 1.6, color: '#4f46e5', hwColor: '#818cf8' },
   { id: 'cloud-gpt54-nano', name: 'GPT-5.4 nano', quant: '400K context', hardware: 'OpenAI API', tier: 'A', tokPerSec: 184, prefillRate: 50000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'good', thinking: true, thinkingBudget: 500, outputMul: 1, costIn: 0.2, costOut: 1.25, color: '#4f46e5', hwColor: '#818cf8' },
   { id: 'cloud-gpt51-codex-mini', name: 'GPT-5.1 Codex mini', quant: '400K context', hardware: 'OpenAI API', tier: 'A', tokPerSec: 185, prefillRate: 45000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'good', thinking: true, thinkingBudget: 800, outputMul: 1, costIn: 1.25, costOut: 10, color: '#4f46e5', hwColor: '#818cf8' },
@@ -468,6 +468,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
   const [outputCount, setOutputCount] = useState(0)
   const [wallTime, setWallTime] = useState(0)
   const [fastMode, setFastMode] = useState(false)
+  const [longCtxMode, setLongCtxMode] = useState(true)
   const [activeSubagents, setActiveSubagents] = useState(0)
   const [subagentWaveIdx, setSubagentWaveIdx] = useState(-1)
   const [subagentTokensIn, setSubagentTokensIn] = useState(0)
@@ -500,8 +501,11 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
   const hasStartedRef = useRef(false)
   const toolResultsRef = useRef(0)
 
-  // Apply fast mode overrides
-  const effectiveModel = (fastMode && model.fast) ? { ...model, tokPerSec: model.fast.tokPerSec, costIn: model.fast.costIn, costOut: model.fast.costOut } : model
+  // Apply toggle overrides
+  let effectiveModel = model
+  if (fastMode && model.fast) effectiveModel = { ...effectiveModel, tokPerSec: model.fast.tokPerSec, costIn: model.fast.costIn, costOut: model.fast.costOut }
+  if (longCtxMode && model.longCtx) effectiveModel = { ...effectiveModel, maxCtx: model.longCtx.maxCtx, costIn: model.longCtx.costIn, costOut: model.longCtx.costOut, quant: '1M context' }
+  else if (model.longCtx && !longCtxMode) effectiveModel = { ...effectiveModel, quant: '272K context' }
   const thinkingBudget = effectiveModel.thinkingBudget
   const effectiveOutput = Math.round(tokenCount * (model.outputMul || 1))
   const totalTokens = thinkingBudget + effectiveOutput
@@ -943,9 +947,10 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
             <span className="model-name">{model.name}</span>
           </div>
           <span className="model-quant">
-            {model.quant}
+            {effectiveModel.quant}
             <a className="citation-link" href={CITATIONS[model.hardware]} target="_blank" rel="noopener noreferrer" title="View benchmark data">cite</a>
             {model.fast && <label className="fast-toggle"><input type="checkbox" checked={fastMode} onChange={(e) => setFastMode(e.target.checked)} />Fast</label>}
+            {model.longCtx && <label className="fast-toggle"><input type="checkbox" checked={longCtxMode} onChange={(e) => setLongCtxMode(e.target.checked)} />{model.longCtx.label}</label>}
           </span>
         </div>
         <span className={`card-status ${phase}`}>{statusLabel}</span>
