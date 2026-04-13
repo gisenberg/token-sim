@@ -450,6 +450,12 @@
   opacity: 1;
 }
 
+.sim-grid-flat {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
 .add-card-placeholder {
   height: 580px;
   border: 2px dashed var(--border);

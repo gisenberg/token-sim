@@ -1321,7 +1321,7 @@ function App() {
   const activeExperiment = route.experiment || 'cloud-all'
   const isCustom = activeExperiment === 'custom'
   const experiment = isCustom
-    ? { id: 'custom', name: 'Custom Lineup', desc: 'Build your own comparison', columns: Math.min(customModels.length, 3), models: customModels }
+    ? { id: 'custom', name: 'Custom Lineup', desc: 'Build your own comparison', columns: 3, models: customModels }
     : EXPERIMENTS.find(e => e.id === activeExperiment)
   const selectedModels = experiment.models.map(id => MODELS.find(m => m.id === id)).filter(Boolean)
   const maxThinkingBudget = Math.max(...selectedModels.map(m => m.thinkingBudget))
@@ -1468,12 +1468,42 @@ function App() {
 
             {isRunning && <MetricsChart series={costSeries} models={chartModelMap} hasCloud={hasCloudModels} />}
 
-            {rows.map(({ start, models: rowModels }) => (
-              <div key={start} className="sim-row" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
-                {rowModels.map((model, i) => (
-                  <div key={model.id + '-' + (start + i)} className="custom-card-wrap">
-                    {isCustom && <button className="custom-card-remove" onClick={() => { setCustomModels(prev => prev.filter((_, j) => j !== start + i)); if (isRunning) handleReset() }}>×</button>}
+            {isCustom ? (
+              <div className="sim-grid-flat" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+                {selectedModels.map((model, i) => (
+                  <div key={model.id + '-' + i} className="custom-card-wrap">
+                    <button className="custom-card-remove" onClick={() => { setCustomModels(prev => prev.filter((_, j) => j !== i)); if (isRunning) handleReset() }}>×</button>
                     <TokenStream
+                      model={model}
+                      tokens={tokens}
+                      isRunning={isRunning}
+                      isReset={isReset}
+                      isPaused={isPaused}
+                      tokenCount={tokenCount}
+                      promptTokens={promptTokens}
+                      toolSteps={toolSteps}
+                      subagentWaves={subagentWaves}
+                      timeScale={timeScale}
+                      loopEnabled={loopEnabled}
+                      onCostTick={handleCostTick}
+                      onComplete={handleComplete}
+                      streamIndex={i}
+                    />
+                  </div>
+                ))}
+                {!isRunning && (
+                  <button className="add-card-placeholder" onClick={() => setModelPickerSlot('new')}>
+                    <span className="add-card-icon">+</span>
+                    <span className="add-card-label">Add model</span>
+                  </button>
+                )}
+              </div>
+            ) : (
+              rows.map(({ start, models: rowModels }) => (
+                <div key={start} className="sim-row" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+                  {rowModels.map((model, i) => (
+                    <TokenStream
+                      key={model.id + '-' + (start + i)}
                       model={model}
                       tokens={tokens}
                       isRunning={isRunning}
@@ -1489,18 +1519,9 @@ function App() {
                       onComplete={handleComplete}
                       streamIndex={start + i}
                     />
-                  </div>
-                ))}
-              </div>
-            ))}
-
-            {isCustom && !isRunning && (
-              <div className="sim-row" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
-                <button className="add-card-placeholder" onClick={() => setModelPickerSlot('new')}>
-                  <span className="add-card-icon">+</span>
-                  <span className="add-card-label">Add model</span>
-                </button>
-              </div>
+                  ))}
+                </div>
+              ))
             )}
 
             {modelPickerSlot != null && (
