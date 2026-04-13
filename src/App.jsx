@@ -66,21 +66,21 @@ const MODELS = [
   // Anthropic API — speeds from Artificial Analysis, TTFT-derived prefill rates
   // Thinking budgets: typical coding task amounts, not max capability
   // costIn/costOut: $ per 1M tokens (input/output)
-  { id: 'cloud-opus46-1m', name: 'Claude Opus 4.6', quant: '1M context', hardware: 'Anthropic API', tier: 'S', tokPerSec: 48, prefillRate: 15000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 1500, outputMul: 1, costIn: 5, costOut: 25, fast: { tokPerSec: 120, costIn: 30, costOut: 150 }, color: '#d97706', hwColor: '#fbbf24' },
-  { id: 'cloud-sonnet46', name: 'Claude Sonnet 4.6', quant: '1M context', hardware: 'Anthropic API', tier: 'S', tokPerSec: 66, prefillRate: 25000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 1200, outputMul: 1, costIn: 3, costOut: 15, color: '#d97706', hwColor: '#fbbf24' },
+  { id: 'cloud-opus46-1m', name: 'Claude Opus 4.6', quant: '1M context', hardware: 'Anthropic API', tier: 'S', tokPerSec: 48, prefillRate: 15000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 1500, effortProvider: 'anthropic', outputMul: 1, costIn: 5, costOut: 25, fast: { tokPerSec: 120, costIn: 30, costOut: 150 }, color: '#d97706', hwColor: '#fbbf24' },
+  { id: 'cloud-sonnet46', name: 'Claude Sonnet 4.6', quant: '1M context', hardware: 'Anthropic API', tier: 'S', tokPerSec: 66, prefillRate: 25000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 1200, effortProvider: 'anthropic', outputMul: 1, costIn: 3, costOut: 15, color: '#d97706', hwColor: '#fbbf24' },
   { id: 'cloud-haiku45', name: 'Claude Haiku 4.5', quant: '200K context', hardware: 'Anthropic API', tier: 'A', tokPerSec: 92, prefillRate: 60000, weightGB: 0, kvPerTokKB: 0, maxCtx: '200K', quality: 'good', thinking: false, thinkingBudget: 0, outputMul: 1, costIn: 1, costOut: 5, color: '#d97706', hwColor: '#fbbf24' },
   // Google API
-  { id: 'cloud-gemini31pro', name: 'Gemini 3.1 Pro', quant: '1M context', hardware: 'Google API', tier: 'S', tokPerSec: 126, prefillRate: 20000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 1500, outputMul: 1, costIn: 2, costOut: 12, color: '#059669', hwColor: '#34d399' },
-  { id: 'cloud-gemini25pro', name: 'Gemini 2.5 Pro', quant: '1M context', hardware: 'Google API', tier: 'S', tokPerSec: 122, prefillRate: 20000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 1500, outputMul: 1, costIn: 1.25, costOut: 10, color: '#059669', hwColor: '#34d399' },
-  { id: 'cloud-gemini3flash', name: 'Gemini 3 Flash', quant: '1M context', hardware: 'Google API', tier: 'S', tokPerSec: 153, prefillRate: 60000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 800, outputMul: 1, costIn: 0.5, costOut: 3, color: '#059669', hwColor: '#34d399' },
+  { id: 'cloud-gemini31pro', name: 'Gemini 3.1 Pro', quant: '1M context', hardware: 'Google API', tier: 'S', tokPerSec: 126, prefillRate: 20000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 1500, effortProvider: 'openai', outputMul: 1, costIn: 2, costOut: 12, color: '#059669', hwColor: '#34d399' },
+  { id: 'cloud-gemini25pro', name: 'Gemini 2.5 Pro', quant: '1M context', hardware: 'Google API', tier: 'S', tokPerSec: 122, prefillRate: 20000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 1500, effortProvider: 'openai', outputMul: 1, costIn: 1.25, costOut: 10, color: '#059669', hwColor: '#34d399' },
+  { id: 'cloud-gemini3flash', name: 'Gemini 3 Flash', quant: '1M context', hardware: 'Google API', tier: 'S', tokPerSec: 153, prefillRate: 60000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 800, effortProvider: 'openai', outputMul: 1, costIn: 0.5, costOut: 3, color: '#059669', hwColor: '#34d399' },
   // OpenAI API
   { id: 'cloud-gpt41', name: 'GPT-4.1', quant: '1M context', hardware: 'OpenAI API', tier: 'A', tokPerSec: 100, prefillRate: 30000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'good', thinking: false, thinkingBudget: 0, outputMul: 1, costIn: 2, costOut: 8, color: '#4f46e5', hwColor: '#818cf8' },
-  { id: 'cloud-o3mini', name: 'o3-mini (high)', quant: '200K context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 152, prefillRate: 30000, weightGB: 0, kvPerTokKB: 0, maxCtx: '200K', quality: 'frontier', thinking: true, thinkingBudget: 2000, outputMul: 1, costIn: 1.1, costOut: 4.4, color: '#4f46e5', hwColor: '#818cf8' },
-  { id: 'cloud-gpt53-codex', name: 'GPT-5.3 Codex', quant: '400K context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 71, prefillRate: 20000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'frontier', thinking: true, thinkingBudget: 2000, outputMul: 1, costIn: 1.75, costOut: 7, color: '#4f46e5', hwColor: '#818cf8' },
-  { id: 'cloud-gpt54', name: 'GPT-5.4', quant: '272K context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 83, prefillRate: 25000, weightGB: 0, kvPerTokKB: 0, maxCtx: '272K', quality: 'frontier', thinking: true, thinkingBudget: 1500, outputMul: 1, costIn: 2.5, costOut: 15, longCtx: { maxCtx: '1000K', costIn: 5, costOut: 22.5, label: '1M Context' }, color: '#4f46e5', hwColor: '#818cf8' },
-  { id: 'cloud-gpt54-mini', name: 'GPT-5.4 mini', quant: '400K context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 168, prefillRate: 40000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'frontier', thinking: true, thinkingBudget: 800, outputMul: 1, costIn: 0.4, costOut: 1.6, color: '#4f46e5', hwColor: '#818cf8' },
-  { id: 'cloud-gpt54-nano', name: 'GPT-5.4 nano', quant: '400K context', hardware: 'OpenAI API', tier: 'A', tokPerSec: 184, prefillRate: 50000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'good', thinking: true, thinkingBudget: 500, outputMul: 1, costIn: 0.2, costOut: 1.25, color: '#4f46e5', hwColor: '#818cf8' },
-  { id: 'cloud-gpt51-codex-mini', name: 'GPT-5.1 Codex mini', quant: '400K context', hardware: 'OpenAI API', tier: 'A', tokPerSec: 185, prefillRate: 45000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'good', thinking: true, thinkingBudget: 800, outputMul: 1, costIn: 1.25, costOut: 10, color: '#4f46e5', hwColor: '#818cf8' },
+  { id: 'cloud-o3mini', name: 'o3-mini (high)', quant: '200K context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 152, prefillRate: 30000, weightGB: 0, kvPerTokKB: 0, maxCtx: '200K', quality: 'frontier', thinking: true, thinkingBudget: 2000, effortProvider: 'openai', outputMul: 1, costIn: 1.1, costOut: 4.4, color: '#4f46e5', hwColor: '#818cf8' },
+  { id: 'cloud-gpt53-codex', name: 'GPT-5.3 Codex', quant: '400K context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 71, prefillRate: 20000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'frontier', thinking: true, thinkingBudget: 2000, effortProvider: 'openai', outputMul: 1, costIn: 1.75, costOut: 7, color: '#4f46e5', hwColor: '#818cf8' },
+  { id: 'cloud-gpt54', name: 'GPT-5.4', quant: '272K context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 83, prefillRate: 25000, weightGB: 0, kvPerTokKB: 0, maxCtx: '272K', quality: 'frontier', thinking: true, thinkingBudget: 1500, effortProvider: 'openai', outputMul: 1, costIn: 2.5, costOut: 15, longCtx: { maxCtx: '1000K', costIn: 5, costOut: 22.5, label: '1M Context' }, color: '#4f46e5', hwColor: '#818cf8' },
+  { id: 'cloud-gpt54-mini', name: 'GPT-5.4 mini', quant: '400K context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 168, prefillRate: 40000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'frontier', thinking: true, thinkingBudget: 800, effortProvider: 'openai', outputMul: 1, costIn: 0.4, costOut: 1.6, color: '#4f46e5', hwColor: '#818cf8' },
+  { id: 'cloud-gpt54-nano', name: 'GPT-5.4 nano', quant: '400K context', hardware: 'OpenAI API', tier: 'A', tokPerSec: 184, prefillRate: 50000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'good', thinking: true, thinkingBudget: 500, effortProvider: 'openai', outputMul: 1, costIn: 0.2, costOut: 1.25, color: '#4f46e5', hwColor: '#818cf8' },
+  { id: 'cloud-gpt51-codex-mini', name: 'GPT-5.1 Codex mini', quant: '400K context', hardware: 'OpenAI API', tier: 'A', tokPerSec: 185, prefillRate: 45000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'good', thinking: true, thinkingBudget: 800, effortProvider: 'openai', outputMul: 1, costIn: 1.25, costOut: 10, color: '#4f46e5', hwColor: '#818cf8' },
   // OpenRouter Free / NVIDIA Free — measured via api_bench.py, quality from 4-benchmark coding suite
   // GPT-OSS 120B: 16/22 (73%) — passes ExprEval+A*+String, 0/6 on LRU (TypeScript syntax contamination)
   { id: 'free-gpt-oss-120b', name: 'GPT-OSS 120B', quant: '131K context', hardware: 'OpenRouter Free', tier: 'B', tokPerSec: 34, prefillRate: 5000, weightGB: 0, kvPerTokKB: 0, maxCtx: '131K', quality: '16/22', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#10b981', hwColor: '#6ee7b7' },
@@ -469,6 +469,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, isPaused, tokenCount, 
   const [wallTime, setWallTime] = useState(0)
   const [fastMode, setFastMode] = useState(false)
   const [longCtxMode, setLongCtxMode] = useState(true)
+  const [effortLevel, setEffortLevel] = useState('high')
   const [activeSubagents, setActiveSubagents] = useState(0)
   const [subagentWaveIdx, setSubagentWaveIdx] = useState(-1)
   const [subagentTokensIn, setSubagentTokensIn] = useState(0)
@@ -506,6 +507,12 @@ const TokenStream = ({ model, tokens, isRunning, isReset, isPaused, tokenCount, 
   if (fastMode && model.fast) effectiveModel = { ...effectiveModel, tokPerSec: model.fast.tokPerSec, costIn: model.fast.costIn, costOut: model.fast.costOut }
   if (longCtxMode && model.longCtx) effectiveModel = { ...effectiveModel, maxCtx: model.longCtx.maxCtx, costIn: model.longCtx.costIn, costOut: model.longCtx.costOut, quant: '1M context' }
   else if (model.longCtx && !longCtxMode) effectiveModel = { ...effectiveModel, quant: '272K context' }
+  // Apply reasoning effort to thinking budget
+  if (model.effortProvider && model.thinkingBudget > 0) {
+    const levels = EFFORT_LEVELS[model.effortProvider]
+    const level = levels?.find(l => l.id === effortLevel) ?? levels?.find(l => l.thinkMul === 1)
+    if (level) effectiveModel = { ...effectiveModel, thinkingBudget: Math.round(model.thinkingBudget * level.thinkMul) }
+  }
   const thinkingBudget = effectiveModel.thinkingBudget
   const effectiveOutput = Math.round(tokenCount * (effectiveModel.outputMul || 1))
   const totalTokens = thinkingBudget + effectiveOutput
@@ -726,8 +733,10 @@ const TokenStream = ({ model, tokens, isRunning, isReset, isPaused, tokenCount, 
         toolResultsRef.current += waveOutputTotal
         setToolResultTokens(toolResultsRef.current)
 
-        // Add to tool log
-        setToolLog(prev => [...prev, { label: `${wave.label} (${wave.count} subagents)`, tokens: waveOutputTotal, subagent: true }])
+        // Add to tool log with delegate model info
+        const delegate = SUBAGENT_DELEGATES[model.id]
+        const delegateLabel = delegate ? ` via ${delegate.label}` : ''
+        setToolLog(prev => [...prev, { label: `${wave.label} (${wave.count} agents${delegateLabel})`, tokens: waveOutputTotal, subagent: true }])
 
         // Animate the wave duration
         const waveStart = Date.now()
@@ -948,6 +957,9 @@ const TokenStream = ({ model, tokens, isRunning, isReset, isPaused, tokenCount, 
             <a className="citation-link" href={CITATIONS[model.hardware]} target="_blank" rel="noopener noreferrer" title="View benchmark data">cite</a>
             {model.fast && <label className="fast-toggle"><input type="checkbox" checked={fastMode} onChange={(e) => setFastMode(e.target.checked)} />Fast</label>}
             {model.longCtx && <label className="fast-toggle"><input type="checkbox" checked={longCtxMode} onChange={(e) => setLongCtxMode(e.target.checked)} />{model.longCtx.label}</label>}
+            {model.effortProvider && <select className="effort-select" value={effortLevel} onChange={(e) => setEffortLevel(e.target.value)}>
+              {(EFFORT_LEVELS[model.effortProvider] ?? []).map(l => <option key={l.id} value={l.id}>{l.label}</option>)}
+            </select>}
           </span>
         </div>
         <span className={`card-status ${phase}`}>{statusLabel}</span>
@@ -1087,6 +1099,33 @@ const TokenStream = ({ model, tokens, isRunning, isReset, isPaused, tokenCount, 
 // ── Metrics Chart ──
 // Distinct colors for chart lines — avoids same-platform models blending together
 const CHART_COLORS = ['#f87171','#38bdf8','#34d399','#fbbf24','#a78bfa','#fb923c','#f472b6','#22d3ee','#a3e635','#e879f9']
+
+// Reasoning effort: affects thinkingBudget, not tok/s. Higher effort = more thinking tokens billed.
+const EFFORT_LEVELS = {
+  anthropic: [
+    { id: 'low', label: 'Low', thinkMul: 0, desc: 'No thinking' },
+    { id: 'medium', label: 'Medium', thinkMul: 0.3, desc: 'Light reasoning' },
+    { id: 'high', label: 'High', thinkMul: 1, desc: 'Standard (default)' },
+    { id: 'max', label: 'Max', thinkMul: 3.5, desc: 'Deep reasoning, 2-5x tokens' },
+  ],
+  openai: [
+    { id: 'none', label: 'None', thinkMul: 0, desc: 'No reasoning' },
+    { id: 'low', label: 'Low', thinkMul: 0.2, desc: 'Fast, minimal thinking' },
+    { id: 'medium', label: 'Medium', thinkMul: 0.5, desc: 'Balanced' },
+    { id: 'high', label: 'High', thinkMul: 1, desc: 'Standard (default)' },
+    { id: 'xhigh', label: 'XHigh', thinkMul: 3.5, desc: 'Max depth, 3-5x tokens' },
+  ],
+}
+
+// Subagent delegate models: main agent may route to cheaper/faster models
+const SUBAGENT_DELEGATES = {
+  'cloud-opus46-1m': { id: 'cloud-haiku45', label: 'Haiku 4.5' },
+  'cloud-sonnet46': { id: 'cloud-haiku45', label: 'Haiku 4.5' },
+  'cloud-gpt54': { id: 'cloud-gpt53-codex', label: 'GPT-5.3 Codex' },
+  'cloud-gpt54-mini': { id: 'cloud-gpt51-codex-mini', label: 'GPT-5.1 Codex mini' },
+  'cloud-gemini31pro': { id: 'cloud-gemini3flash', label: 'Gemini 3 Flash' },
+  'cloud-gemini25pro': { id: 'cloud-gemini3flash', label: 'Gemini 3 Flash' },
+}
 
 const formatDuration = (s) => {
   if (s < 60) return `${Math.round(s)}s`
@@ -1241,6 +1280,7 @@ function App() {
   const [route, setRoute] = useState(getHashRoute)
   const [isRunning, setIsRunning] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
+  const [customModels, setCustomModels] = useState(['cloud-opus46-1m', 'cloud-gemini31pro', 'cloud-gpt54'])
   const [costSeries, setCostSeries] = useState({})
   const costSeriesRef = useRef({})
   const [isReset, setIsReset] = useState(false)
@@ -1261,8 +1301,11 @@ function App() {
   const navigate = (hash) => { window.location.hash = hash }
 
   const activeExperiment = route.experiment || 'cloud-all'
-  const experiment = EXPERIMENTS.find(e => e.id === activeExperiment)
-  const selectedModels = experiment.models.map(id => MODELS.find(m => m.id === id))
+  const isCustom = activeExperiment === 'custom'
+  const experiment = isCustom
+    ? { id: 'custom', name: 'Custom Lineup', desc: 'Build your own comparison', columns: Math.min(customModels.length, 3), models: customModels }
+    : EXPERIMENTS.find(e => e.id === activeExperiment)
+  const selectedModels = experiment.models.map(id => MODELS.find(m => m.id === id)).filter(Boolean)
   const maxThinkingBudget = Math.max(...selectedModels.map(m => m.thinkingBudget))
   const maxOutputMul = Math.max(...selectedModels.map(m => m.outputMul || 1))
   const maxTotalTokens = Math.round(tokenCount * maxOutputMul) + maxThinkingBudget
@@ -1330,6 +1373,9 @@ function App() {
     <div className="app-layout">
       <nav className="experiment-nav">
         <div className="nav-title">Experiments</div>
+        <button className={`nav-item nav-custom ${isCustom && route.page === 'sim' ? 'active' : ''}`} onClick={() => handleExperimentChange('custom')}>
+          <span className="nav-item-name">Build Your Own</span>
+        </button>
         {EXPERIMENT_CATEGORIES.map(cat => (
           <div key={cat.id} className="nav-category">
             <div className="nav-cat-label">{cat.label}</div>
@@ -1356,6 +1402,24 @@ function App() {
               </div>
               <p>{experiment.desc}</p>
             </header>
+
+            {isCustom && (
+              <div className="custom-picker">
+                {customModels.map((mid, i) => (
+                  <div key={i} className="custom-picker-row">
+                    <select value={mid} onChange={(e) => setCustomModels(prev => { const n = [...prev]; n[i] = e.target.value; return n })} className="prompt-select">
+                      {['RTX 5090', 'M4 Max', 'DGX Spark', 'Anthropic API', 'Google API', 'OpenAI API'].map(hw => (
+                        <optgroup key={hw} label={hw}>
+                          {MODELS.filter(m => m.hardware === hw).map(m => <option key={m.id} value={m.id}>[{m.tier}] {m.name} {m.quant}</option>)}
+                        </optgroup>
+                      ))}
+                    </select>
+                    <button className="custom-remove" onClick={() => setCustomModels(prev => prev.filter((_, j) => j !== i))}>×</button>
+                  </div>
+                ))}
+                <button className="custom-add" onClick={() => setCustomModels(prev => [...prev, MODELS[0].id])}>+ Add model</button>
+              </div>
+            )}
 
             <div className="controls">
               <div className="control-group">

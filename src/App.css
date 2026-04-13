@@ -406,6 +406,88 @@
   cursor: pointer;
 }
 
+.effort-select {
+  font-size: 0.55rem;
+  padding: 1px 4px;
+  background: var(--bg-card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-family: var(--sans);
+  cursor: pointer;
+}
+
+/* ── Custom Picker ── */
+
+.custom-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+  align-items: center;
+}
+
+.custom-picker-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.custom-picker-row .prompt-select {
+  min-width: 220px;
+}
+
+.custom-remove {
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.9rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.custom-remove:hover {
+  border-color: #f87171;
+  color: #f87171;
+}
+
+.custom-add {
+  padding: 6px 14px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.78rem;
+  font-family: var(--sans);
+  cursor: pointer;
+}
+
+.custom-add:hover {
+  border-color: var(--border-light);
+  color: var(--text-bright);
+}
+
+/* ── Nav Custom Button ── */
+
+.nav-custom {
+  margin: 0 8px 8px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  justify-content: center;
+  font-weight: 500;
+}
+
+.nav-custom:hover:not(:disabled) {
+  border-color: var(--border-light);
+  border-style: solid;
+}
+
 .card-status {
   font-size: 0.65rem;
   font-weight: 500;
