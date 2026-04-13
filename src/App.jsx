@@ -1495,7 +1495,7 @@ function App() {
                     <button className="modal-close" onClick={() => setModelPickerSlot(null)}>×</button>
                   </div>
                   <div className="modal-body">
-                    {['RTX 5090', 'M4 Max', 'DGX Spark', 'Anthropic API', 'Google API', 'OpenAI API'].map(hw => (
+                    {['Anthropic API', 'Google API', 'OpenAI API', 'RTX 5090', 'M4 Max', 'DGX Spark'].map(hw => (
                       <div key={hw} className="modal-group">
                         <div className="modal-group-label">{hw}</div>
                         {MODELS.filter(m => m.hardware === hw).map(m => (
