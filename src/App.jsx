@@ -454,7 +454,7 @@ const formatTokens = (n) => {
 }
 
 // ── TokenStream Component ──
-const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptTokens, toolSteps, subagentWaves, timeScale, loopEnabled, onLoopComplete, onCostTick, onComplete, streamIndex }) => {
+const TokenStream = ({ model, tokens, isRunning, isReset, isPaused, tokenCount, promptTokens, toolSteps, subagentWaves, timeScale, loopEnabled, onLoopComplete, onCostTick, onComplete, streamIndex }) => {
   const [displayedTokens, setDisplayedTokens] = useState([])
   const [phase, setPhase] = useState('idle')
   const [thinkingTokensGenerated, setThinkingTokensGenerated] = useState(0)
@@ -511,6 +511,8 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
   const totalTokens = thinkingBudget + effectiveOutput
   const tsRef = useRef(timeScale)
   tsRef.current = timeScale
+  const pausedRef = useRef(isPaused)
+  pausedRef.current = isPaused
   const emRef = useRef(effectiveModel)
   emRef.current = effectiveModel
 
@@ -600,7 +602,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
       const compactMs = needsCompact ? (compactTokens / (emRef.current.prefillRate * 0.5)) * 1000 : 0
 
       // Animate a progress bar over durationMs, then call next()
-      const getTs = () => tsRef.current || 1
+      const getTs = () => pausedRef.current ? 0.0001 : (tsRef.current || 1)
       const animateBar = (setter, durationMs, next) => {
         const start = Date.now()
         let elapsed = 0
@@ -1238,6 +1240,7 @@ const getHashRoute = () => {
 function App() {
   const [route, setRoute] = useState(getHashRoute)
   const [isRunning, setIsRunning] = useState(false)
+  const [isPaused, setIsPaused] = useState(false)
   const [costSeries, setCostSeries] = useState({})
   const costSeriesRef = useRef({})
   const [isReset, setIsReset] = useState(false)
@@ -1292,10 +1295,19 @@ function App() {
     }
   }, [])
   const handleStart = () => {
-    setIsReset(false); setCompletedStreams(new Set()); setIsRunning(true)
-    costSeriesRef.current = {}; setCostSeries({})
+    if (isRunning && !isPaused) {
+      // Playing → Pause
+      setIsPaused(true)
+    } else if (isRunning && isPaused) {
+      // Paused → Resume
+      setIsPaused(false)
+    } else {
+      // Stopped → Start
+      setIsReset(false); setCompletedStreams(new Set()); setIsRunning(true); setIsPaused(false)
+      costSeriesRef.current = {}; setCostSeries({})
+    }
   }
-  const handleReset = () => { setIsRunning(false); setIsReset(true); setCompletedStreams(new Set()); setTimeout(() => setIsReset(false), 100) }
+  const handleReset = () => { setIsRunning(false); setIsPaused(false); setIsReset(true); setCompletedStreams(new Set()); setTimeout(() => setIsReset(false), 100) }
 
   const tokens = useMemo(() => generateText(maxTotalTokens), [maxTotalTokens])
   const allComplete = completedStreams.size >= experiment.models.length
@@ -1377,7 +1389,7 @@ function App() {
             </div>
 
             <div className="action-bar">
-              <button onClick={handleStart} disabled={controlsDisabled} className="btn-start">{controlsDisabled ? 'Running...' : 'Start'}</button>
+              <button onClick={handleStart} className="btn-start">{isRunning && !isPaused ? 'Pause' : isRunning && isPaused ? 'Resume' : 'Start'}</button>
               <button onClick={handleReset} className="btn-reset">Stop</button>
               <label className="loop-toggle">
                 <input type="checkbox" checked={loopEnabled} onChange={(e) => setLoopEnabled(e.target.checked)} />
@@ -1400,6 +1412,7 @@ function App() {
                     tokens={tokens}
                     isRunning={isRunning}
                     isReset={isReset}
+                    isPaused={isPaused}
                     tokenCount={tokenCount}
                     promptTokens={promptTokens}
                     toolSteps={toolSteps}
