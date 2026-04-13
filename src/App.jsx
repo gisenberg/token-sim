@@ -1282,6 +1282,7 @@ function App() {
   const [isRunning, setIsRunning] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
   const [customModels, setCustomModels] = useState(['cloud-opus46-1m', 'cloud-gemini31pro', 'cloud-gpt54'])
+  const [modelPickerSlot, setModelPickerSlot] = useState(null) // null=closed, number=slot index, 'new'=adding
   const [costSeries, setCostSeries] = useState({})
   const costSeriesRef = useRef({})
   const [isReset, setIsReset] = useState(false)
@@ -1404,23 +1405,6 @@ function App() {
               <p>{experiment.desc}</p>
             </header>
 
-            {isCustom && (
-              <div className="custom-picker">
-                {customModels.map((mid, i) => (
-                  <div key={i} className="custom-picker-row">
-                    <select value={mid} onChange={(e) => setCustomModels(prev => { const n = [...prev]; n[i] = e.target.value; return n })} className="prompt-select">
-                      {['RTX 5090', 'M4 Max', 'DGX Spark', 'Anthropic API', 'Google API', 'OpenAI API'].map(hw => (
-                        <optgroup key={hw} label={hw}>
-                          {MODELS.filter(m => m.hardware === hw).map(m => <option key={m.id} value={m.id}>[{m.tier}] {m.name} {m.quant}</option>)}
-                        </optgroup>
-                      ))}
-                    </select>
-                    <button className="custom-remove" onClick={() => setCustomModels(prev => prev.filter((_, j) => j !== i))}>×</button>
-                  </div>
-                ))}
-                <button className="custom-add" onClick={() => setCustomModels(prev => [...prev, MODELS[0].id])}>+ Add model</button>
-              </div>
-            )}
 
             <div className="controls">
               <div className="control-group">
@@ -1454,8 +1438,8 @@ function App() {
             </div>
 
             <div className="action-bar">
-              <button onClick={handleStart} className="btn-start">{isRunning && !isPaused ? 'Pause' : isRunning && isPaused ? 'Resume' : 'Start'}</button>
-              <button onClick={handleReset} className="btn-reset">Stop</button>
+              <button onClick={handleStart} className="btn-start">{isRunning && !isPaused ? '⏸' : isRunning && isPaused ? '▶' : '▶'}</button>
+              <button onClick={handleReset} className="btn-reset">⏹</button>
               <label className="loop-toggle">
                 <input type="checkbox" checked={loopEnabled} onChange={(e) => setLoopEnabled(e.target.checked)} />
                 Loop
@@ -1468,29 +1452,72 @@ function App() {
 
             {isRunning && <MetricsChart series={costSeries} models={chartModelMap} hasCloud={hasCloudModels} />}
 
-            {rows.map(({ start, models }) => (
+            {rows.map(({ start, models: rowModels }) => (
               <div key={start} className="sim-row" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
-                {models.map((model, i) => (
-                  <TokenStream
-                    key={model.id + '-' + (start + i)}
-                    model={model}
-                    tokens={tokens}
-                    isRunning={isRunning}
-                    isReset={isReset}
-                    isPaused={isPaused}
-                    tokenCount={tokenCount}
-                    promptTokens={promptTokens}
-                    toolSteps={toolSteps}
-                    subagentWaves={subagentWaves}
-                    timeScale={timeScale}
-                    loopEnabled={loopEnabled}
-                    onCostTick={handleCostTick}
-                    onComplete={handleComplete}
-                    streamIndex={start + i}
-                  />
+                {rowModels.map((model, i) => (
+                  <div key={model.id + '-' + (start + i)} className="custom-card-wrap">
+                    {isCustom && <button className="custom-card-remove" onClick={() => { setCustomModels(prev => prev.filter((_, j) => j !== start + i)); if (isRunning) handleReset() }}>×</button>}
+                    <TokenStream
+                      model={model}
+                      tokens={tokens}
+                      isRunning={isRunning}
+                      isReset={isReset}
+                      isPaused={isPaused}
+                      tokenCount={tokenCount}
+                      promptTokens={promptTokens}
+                      toolSteps={toolSteps}
+                      subagentWaves={subagentWaves}
+                      timeScale={timeScale}
+                      loopEnabled={loopEnabled}
+                      onCostTick={handleCostTick}
+                      onComplete={handleComplete}
+                      streamIndex={start + i}
+                    />
+                  </div>
                 ))}
               </div>
             ))}
+
+            {isCustom && !isRunning && (
+              <div className="sim-row" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+                <button className="add-card-placeholder" onClick={() => setModelPickerSlot('new')}>
+                  <span className="add-card-icon">+</span>
+                  <span className="add-card-label">Add model</span>
+                </button>
+              </div>
+            )}
+
+            {modelPickerSlot != null && (
+              <div className="modal-overlay" onClick={() => setModelPickerSlot(null)}>
+                <div className="modal-content" onClick={e => e.stopPropagation()}>
+                  <div className="modal-header">
+                    <span>Select a model</span>
+                    <button className="modal-close" onClick={() => setModelPickerSlot(null)}>×</button>
+                  </div>
+                  <div className="modal-body">
+                    {['RTX 5090', 'M4 Max', 'DGX Spark', 'Anthropic API', 'Google API', 'OpenAI API'].map(hw => (
+                      <div key={hw} className="modal-group">
+                        <div className="modal-group-label">{hw}</div>
+                        {MODELS.filter(m => m.hardware === hw).map(m => (
+                          <button key={m.id} className="modal-model-btn" onClick={() => {
+                            if (modelPickerSlot === 'new') {
+                              setCustomModels(prev => [...prev, m.id])
+                            } else {
+                              setCustomModels(prev => { const n = [...prev]; n[modelPickerSlot] = m.id; return n })
+                            }
+                            setModelPickerSlot(null)
+                          }}>
+                            <span className="tier-badge" style={{ background: TIER_COLORS[m.tier] }}>{m.tier}</span>
+                            <span className="modal-model-name">{m.name}</span>
+                            <span className="modal-model-meta">{m.quant} — {m.tokPerSec} tok/s</span>
+                          </button>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </>
         )}
       </main>
