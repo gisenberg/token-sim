@@ -606,7 +606,8 @@ const TokenStream = ({ model, tokens, isRunning, isReset, isPaused, tokenCount, 
 
       const maxCtx = parseInt(emRef.current.maxCtx) * 1000
       const totalToolResult = toolSteps.reduce((s, t) => s + t.resultTokens + t.decodeTokens, 0)
-      const fullUsed = SYSTEM_TOKENS + promptTokens + totalToolResult + thinkingBudget + effectiveOutput
+      const totalSubagentResult = waves.reduce((s, w) => s + w.count * w.outputPerAgent, 0)
+      const fullUsed = SYSTEM_TOKENS + promptTokens + totalToolResult + totalSubagentResult + thinkingBudget + effectiveOutput
       const needsCompact = fullUsed / maxCtx > 0.8
       const compactTokens = needsCompact ? Math.max(0, fullUsed - maxCtx * 0.6) : 0
       const compactMs = needsCompact ? (compactTokens / (emRef.current.prefillRate * 0.5)) * 1000 : 0
@@ -783,8 +784,10 @@ const TokenStream = ({ model, tokens, isRunning, isReset, isPaused, tokenCount, 
                 // Per-stream loop: accumulate tallies, grow context, restart
                 if (loopEnabled) {
                   const toolTok = toolSteps.reduce((s, t) => s + (t.resultTokens ?? 0) + (t.decodeTokens ?? 0) + (t.thinkTokens ?? 0), 0)
-                  const inTok = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current + toolTok
-                  const outTok = effectiveOutput + thinkingBudget + toolSteps.reduce((s, t) => s + (t.decodeTokens ?? 0) + (t.thinkTokens ?? 0), 0)
+                  // Include subagent output — it flowed back as context via toolResultsRef
+                  const subagentTok = waves.reduce((s, w) => s + w.count * (w.outputPerAgent + w.contextPerAgent), 0)
+                  const inTok = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current + toolTok + subagentTok
+                  const outTok = effectiveOutput + thinkingBudget + toolSteps.reduce((s, t) => s + (t.decodeTokens ?? 0) + (t.thinkTokens ?? 0), 0) + waves.reduce((s, w) => s + w.count * w.outputPerAgent, 0)
                   cumulativeInRef.current += inTok
                   cumulativeOutRef.current += outTok
                   setCumulativeIn(prev => prev + inTok)
@@ -799,7 +802,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, isPaused, tokenCount, 
                   }
 
                   // Accumulate context for next loop; compact if >80% of max ctx
-                  const turnTokens = outTok + toolTok
+                  const turnTokens = outTok + toolTok + subagentTok
                   const maxCtx = parseInt(emRef.current.maxCtx) * 1000
                   const nextTotal = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current + turnTokens
                   if (nextTotal / maxCtx > 0.8) {
