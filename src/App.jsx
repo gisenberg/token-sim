@@ -1035,7 +1035,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, isPaused, tokenCount, 
         const outRate = effectiveModel.costOut
         const discount = CACHE_DISCOUNT[effectiveModel.hardware] ?? 1
         const totalCost = cumulativeCostRef.current + runCostRef.current
-        const rateLabel = `$${inRate}/$${outRate} per 1M (${Math.round(discount * 100)}% cached)`
+        const rateLabel = `$${inRate}/$${outRate} per 1M (${Math.round((1 - discount) * 100)}% cache discount)`
         return (
           <div className="cost-row">
             <div className="cost-total">${totalCost < 0.01 ? totalCost.toFixed(4) : totalCost.toFixed(2)}</div>
