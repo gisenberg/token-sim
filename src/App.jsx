@@ -592,7 +592,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
         }
       }, 200)
 
-      const maxCtx = parseInt(model.maxCtx) * 1000
+      const maxCtx = parseInt(emRef.current.maxCtx) * 1000
       const totalToolResult = toolSteps.reduce((s, t) => s + t.resultTokens + t.decodeTokens, 0)
       const fullUsed = SYSTEM_TOKENS + promptTokens + totalToolResult + thinkingBudget + effectiveOutput
       const needsCompact = fullUsed / maxCtx > 0.8
@@ -781,7 +781,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
 
                   // Accumulate context for next loop; compact if >80% of max ctx
                   const turnTokens = outTok + toolTok
-                  const maxCtx = parseInt(model.maxCtx) * 1000
+                  const maxCtx = parseInt(emRef.current.maxCtx) * 1000
                   const nextTotal = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current + turnTokens
                   if (nextTotal / maxCtx > 0.8) {
                     streamAccCtxRef.current = Math.round((streamAccCtxRef.current + turnTokens) * 0.2)
@@ -908,7 +908,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
   const thinkingLabel = model.thinking ? `${model.thinkingBudget.toLocaleString()}` : 'Off'
 
   // Context bar — dynamic based on accumulated tool results
-  const maxCtxTokens = parseInt(model.maxCtx) * 1000
+  const maxCtxTokens = parseInt(emRef.current.maxCtx) * 1000
   const usedTokens = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current + toolResultTokens + thinkingBudget + effectiveOutput
   const overflows = usedTokens > maxCtxTokens
   const pct = (n) => Math.min((n / maxCtxTokens) * 100, 100)
