@@ -771,14 +771,10 @@ const TokenStream = ({ model, tokens, isRunning, isReset, tokenCount, promptToke
                   setCumulativeIn(prev => prev + inTok)
                   setCumulativeOut(prev => prev + outTok)
                   setLoopCount(prev => prev + 1)
-                  // Accumulate cost for cloud models
-                  if (model.costIn != null) {
-                    const threshold = model.costInThreshold ?? Infinity
-                    const maxCtxTok = parseInt(model.maxCtx) * 1000
-                    const useHigh = maxCtxTok > threshold
-                    const inRate = useHigh && model.costInHigh ? model.costInHigh : model.costIn
-                    const outRate = useHigh && model.costOutHigh ? model.costOutHigh : model.costOut
-                    const addCost = (inTok / 1e6) * inRate + (outTok / 1e6) * outRate
+                  // Accumulate cost using effective model (respects fast/longCtx toggles)
+                  const em = emRef.current
+                  if (em.costIn != null) {
+                    const addCost = (inTok / 1e6) * em.costIn + (outTok / 1e6) * em.costOut
                     cumulativeCostRef.current += addCost
                     setCumulativeCost(prev => prev + addCost)
                   }
