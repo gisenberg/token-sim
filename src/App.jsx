@@ -916,7 +916,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, isPaused, tokenCount, 
   const statusLabel = phaseLabels[phase]
   const isActive = phase !== 'idle' && phase !== 'complete'
   const cardClass = ['stream-card', isActive && 'is-running', phase === 'complete' && 'is-complete'].filter(Boolean).join(' ')
-  const thinkingLabel = model.thinking ? `${model.thinkingBudget.toLocaleString()}` : 'Off'
+  const thinkingLabel = model.thinking ? (thinkingBudget > 0 ? thinkingBudget.toLocaleString() : 'Off') : 'Off'
 
   // Context bar — dynamic based on accumulated tool results
   const maxCtxTokens = parseInt(emRef.current.maxCtx) * 1000
