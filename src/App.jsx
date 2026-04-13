@@ -346,6 +346,14 @@ const renderMarkdown = (text) => {
 // System prompt + tool schemas: measured ~18K for Claude Code with MCP tools
 const SYSTEM_TOKENS = 18000
 
+// Prompt caching: system prompt + prior conversation is cached by the API provider.
+// Cached input is billed at ~10% of the full input rate (Anthropic: 10%, OpenAI: 50%, Google: 25%).
+// The "new" tokens per turn (tool result + new user message) are billed at full rate.
+const CACHE_DISCOUNT = { 'Anthropic API': 0.1, 'Google API': 0.25, 'OpenAI API': 0.5 }
+
+// Network latency per API round-trip (cloud only). Adds up across tool calls.
+const NETWORK_LATENCY_MS = 120
+
 // Prompt context = conversation history + current turn content (system tokens separate).
 // Grows ~1-20K per turn depending on tool intensity. Compaction resets accumulation.
 const PROMPT_PRESETS = [
@@ -587,14 +595,16 @@ const TokenStream = ({ model, tokens, isRunning, isReset, isPaused, tokenCount, 
           const simTime = runSimTimeRef.current
           const runIn = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current + toolResultsRef.current
           const runOut = hiddenTokensRef.current + totalIndexRef.current
-          // Compute cost for cloud models
+          // Compute cost with prompt caching: cached prefix at discount, new tokens at full rate
           const em = emRef.current
           if (em.costIn != null) {
-            const threshold = em.costInThreshold ?? Infinity
-            const useHigh = (parseInt(em.maxCtx) * 1000) > threshold
-            const inRate = useHigh && em.costInHigh ? em.costInHigh : em.costIn
-            const outRate = useHigh && em.costOutHigh ? em.costOutHigh : em.costOut
-            runCostRef.current = (runIn / 1e6) * inRate + (runOut / 1e6) * outRate
+            const inRate = em.costIn
+            const outRate = em.costOut
+            const cacheDiscount = CACHE_DISCOUNT[em.hardware] ?? 1
+            // Cached = system + prior prompt history, uncached = new tool results this turn
+            const cachedIn = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current
+            const uncachedIn = toolResultsRef.current
+            runCostRef.current = ((cachedIn / 1e6) * inRate * cacheDiscount) + ((uncachedIn / 1e6) * inRate) + ((runOut / 1e6) * outRate)
           }
           if (onCostTick && !loopTransitionRef.current) {
             onCostTick(streamIndex, totalSimTimeRef.current + simTime, {
@@ -669,7 +679,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, isPaused, tokenCount, 
         intervalRef.current = setInterval(() => {
           const elapsed = Date.now() - streamStart
           const tokPerMs = emRef.current.tokPerSec * getTs() / 1000
-          const shouldBe = Math.min(baseIndex + Math.floor(elapsed * tokPerMs), target, effectiveOutput)
+          const shouldBe = Math.min(baseIndex + Math.floor(elapsed * tokPerMs), target)
           if (totalIndexRef.current < shouldBe) {
             const batch = []
             while (totalIndexRef.current < shouldBe) {
@@ -696,14 +706,21 @@ const TokenStream = ({ model, tokens, isRunning, isReset, isPaused, tokenCount, 
         setPhase('prefill')
         setPrefillElapsed(0)
         setPrefillSize(contextSize)
-        const prefillMs = (contextSize / emRef.current.prefillRate) * 1000
+        // Cloud: cached prefix is near-instant, only new tokens need full prefill.
+        // Model as 10% of cached tokens + 100% of new tokens.
+        const effectiveSize = isCloud ? Math.max(contextSize * 0.1, 500) : contextSize
+        const prefillMs = (effectiveSize / emRef.current.prefillRate) * 1000 + (isCloud ? NETWORK_LATENCY_MS / getTs() : 0)
         animateBar(setPrefillElapsed, prefillMs, next)
       }
 
       // Distribute output across tool steps: ~15% per step, remainder at end
       const numSteps = toolSteps.length
-      const perStepOutput = numSteps > 0 ? Math.floor(effectiveOutput * 0.15 / numSteps) : 0
-      const finalOutput = effectiveOutput - (perStepOutput * numSteps)
+      // Output variance: ±30% per run to model real-world variation
+      // (some turns produce short answers, others full implementations)
+      const outputVariance = 0.7 + Math.random() * 0.6
+      const variedOutput = Math.round(effectiveOutput * outputVariance)
+      const perStepOutput = numSteps > 0 ? Math.floor(variedOutput * 0.15 / numSteps) : 0
+      const finalOutput = variedOutput - (perStepOutput * numSteps)
 
       // Track tokens added in previous step for incremental prefill
       let lastStepTokens = 0
@@ -788,16 +805,19 @@ const TokenStream = ({ model, tokens, isRunning, isReset, isPaused, tokenCount, 
                   // Include subagent output — it flowed back as context via toolResultsRef
                   const subagentTok = waves.reduce((s, w) => s + w.count * (w.outputPerAgent + w.contextPerAgent), 0)
                   const inTok = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current + toolTok + subagentTok
-                  const outTok = effectiveOutput + thinkingBudget + toolSteps.reduce((s, t) => s + (t.decodeTokens ?? 0) + (t.thinkTokens ?? 0), 0) + waves.reduce((s, w) => s + w.count * w.outputPerAgent, 0)
+                  const outTok = totalIndexRef.current + hiddenTokensRef.current + waves.reduce((s, w) => s + w.count * w.outputPerAgent, 0)
                   cumulativeInRef.current += inTok
                   cumulativeOutRef.current += outTok
                   setCumulativeIn(prev => prev + inTok)
                   setCumulativeOut(prev => prev + outTok)
                   setLoopCount(prev => prev + 1)
-                  // Accumulate cost using effective model (respects fast/longCtx toggles)
+                  // Accumulate cost with prompt caching
                   const em = emRef.current
                   if (em.costIn != null) {
-                    const addCost = (inTok / 1e6) * em.costIn + (outTok / 1e6) * em.costOut
+                    const cd = CACHE_DISCOUNT[em.hardware] ?? 1
+                    const cachedIn = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current
+                    const uncachedIn = toolTok + subagentTok
+                    const addCost = ((cachedIn / 1e6) * em.costIn * cd) + ((uncachedIn / 1e6) * em.costIn) + ((outTok / 1e6) * em.costOut)
                     cumulativeCostRef.current += addCost
                     setCumulativeCost(prev => prev + addCost)
                   }
@@ -885,7 +905,7 @@ const TokenStream = ({ model, tokens, isRunning, isReset, isPaused, tokenCount, 
                   lastStepTokens = added
                   setToolResultTokens(toolResultsRef.current)
                   runToolStep(i + 1)
-                }, step.execMs / getTs())
+                }, (step.execMs + (isCloud ? NETWORK_LATENCY_MS : 0)) / getTs())
               }
               tickDecode()
             })
@@ -1011,13 +1031,11 @@ const TokenStream = ({ model, tokens, isRunning, isReset, isPaused, tokenCount, 
       </div>
 
       {hwTotal === 0 && effectiveModel.costIn != null && (() => {
-        const threshold = effectiveModel.costInThreshold ?? Infinity
-        const useHighTier = maxCtxTokens > threshold
-        const inRate = useHighTier && effectiveModel.costInHigh ? effectiveModel.costInHigh : effectiveModel.costIn
-        const outRate = useHighTier && effectiveModel.costOutHigh ? effectiveModel.costOutHigh : effectiveModel.costOut
-        // Single source of truth: cumulativeCostRef (completed runs) + runCostRef (in-progress)
+        const inRate = effectiveModel.costIn
+        const outRate = effectiveModel.costOut
+        const discount = CACHE_DISCOUNT[effectiveModel.hardware] ?? 1
         const totalCost = cumulativeCostRef.current + runCostRef.current
-        const rateLabel = `$${inRate}/$${outRate} per 1M`
+        const rateLabel = `$${inRate}/$${outRate} per 1M (${Math.round(discount * 100)}% cached)`
         return (
           <div className="cost-row">
             <div className="cost-total">${totalCost < 0.01 ? totalCost.toFixed(4) : totalCost.toFixed(2)}</div>
