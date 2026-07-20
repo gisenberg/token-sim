@@ -23,7 +23,7 @@ import {
 } from './simulation/engine.js'
 
 const TIER_COLORS = { 'S+': '#f8d46a', S: '#f4c95d', A: '#5fe0a4', B: '#66b7ff', C: '#b69cff' }
-const CHART_COLORS = ['#ff806d', '#c5e86c', '#f0c766', '#e4a4e8', '#77d7ba', '#ffad5c', '#d99ae8', '#b7d26c']
+const CHART_COLORS = ['#ff6b6b', '#4dabf7', '#ffd43b', '#b197fc', '#63e6be', '#ff922b', '#f06595', '#a9e34b']
 const EVENT_COLORS = {
   network: '#536171',
   prefill: '#e8b04e',
@@ -203,6 +203,7 @@ const ModelCard = ({
   onProfileChange,
   outputTokens,
   onRemove,
+  color,
 }) => {
   const localElapsed = Math.min(elapsed, plan.duration)
   const snapshot = evaluatePlan(plan, localElapsed)
@@ -218,8 +219,8 @@ const ModelCard = ({
   const longRate = plan.events.some((event) => event.detail?.rates?.longContextApplied)
 
   return (
-    <article className={`model-card ${snapshot.complete && !isReady ? 'is-complete' : ''}`}>
-      <div className="card-topline" style={{ background: HARDWARE[model.hardware]?.color }} />
+    <article className={`model-card ${snapshot.complete && !isReady ? 'is-complete' : ''}`} style={{ '--model-color': color }}>
+      <div className="card-topline" />
       <header className="model-header">
         <div>
           <div className="model-name-row">
@@ -227,7 +228,7 @@ const ModelCard = ({
             <h2>{model.name}</h2>
           </div>
           <div className="model-meta">
-            <span style={{ color: HARDWARE[model.hardware]?.color }}>{model.hardware}</span>
+            <span style={{ color }}>{model.hardware}</span>
             <a href={model.source} target="_blank" rel="noreferrer">source</a>
           </div>
         </div>
@@ -246,6 +247,7 @@ const ModelCard = ({
 
       <div className="evidence-row">
         <span>{model.quant ?? 'Hosted model'}</span>
+        <span className={`deployment-chip deployment-${HARDWARE[model.hardware]?.kind}`}>{HARDWARE[model.hardware]?.kind}</span>
         <span className={`evidence evidence-${model.rateEvidence?.replaceAll(' ', '-')}`}>{model.rateEvidence}</span>
         {longRate && <span className="long-rate-chip">long pricing</span>}
       </div>
@@ -265,7 +267,7 @@ const ModelCard = ({
         <span>Visible output</span>
         <strong>{visible.toLocaleString()} / {outputTokens.toLocaleString()}</strong>
       </div>
-      <div className="output-progress"><span style={{ width: `${outputTokens ? visible / outputTokens * 100 : 100}%`, background: HARDWARE[model.hardware]?.color }} /></div>
+      <div className="output-progress"><span style={{ width: `${outputTokens ? visible / outputTokens * 100 : 100}%`, background: color }} /></div>
       <Timeline plan={plan} elapsed={localElapsed} />
 
       <div className="activity-panel">
@@ -295,7 +297,8 @@ const CHART_TABS = [
 
 const MetricsChart = ({ plans, models, elapsed, running }) => {
   const hasCost = models.some((model) => model.pricing)
-  const [tab, setTab] = useState(hasCost ? 'cost' : 'visibleOutput')
+  const hasLocal = models.some((model) => !model.pricing)
+  const [tab, setTab] = useState(hasCost && !hasLocal ? 'cost' : 'visibleOutput')
   const [hoverTime, setHoverTime] = useState(null)
   const svgRef = useRef(null)
   const effectiveTab = !hasCost && tab === 'cost' ? 'visibleOutput' : tab
@@ -314,10 +317,14 @@ const MetricsChart = ({ plans, models, elapsed, running }) => {
   const currentTime = hoverTime ?? (running || elapsed > 0 ? Math.min(elapsed, maxTime) : null)
 
   const handlePointer = (event) => {
-    const bounds = svgRef.current?.getBoundingClientRect()
-    if (!bounds) return
-    const relative = (event.clientX - bounds.left) / bounds.width * width
-    setHoverTime(Math.max(0, Math.min(maxTime, (relative - padding.left) / plotWidth * maxTime)))
+    const svg = svgRef.current
+    const matrix = svg?.getScreenCTM()
+    if (!svg || !matrix) return
+    const pointer = svg.createSVGPoint()
+    pointer.x = event.clientX
+    pointer.y = event.clientY
+    const chartX = pointer.matrixTransform(matrix.inverse()).x
+    setHoverTime(Math.max(0, Math.min(maxTime, (chartX - padding.left) / plotWidth * maxTime)))
   }
 
   return (
@@ -337,8 +344,8 @@ const MetricsChart = ({ plans, models, elapsed, running }) => {
         ref={svgRef}
         className="metrics-chart"
         viewBox={`0 0 ${width} ${height}`}
-        onMouseMove={handlePointer}
-        onMouseLeave={() => setHoverTime(null)}
+        onPointerMove={handlePointer}
+        onPointerLeave={() => setHoverTime(null)}
       >
         {[0, 0.25, 0.5, 0.75, 1].map((fraction) => (
           <g key={fraction}>
@@ -378,7 +385,10 @@ const MetricsChart = ({ plans, models, elapsed, running }) => {
           )
         })}
       </div>
-      <p className="chart-note">Solid lines end when a model finishes. Dashed extensions show that cumulative usage stays flat while slower models continue.</p>
+      <p className="chart-note">
+        Solid lines end when a model finishes. Dashed extensions show that cumulative usage stays flat while slower models continue.
+        {hasCost && hasLocal && ' API spend excludes local hardware, energy, and amortization costs.'}
+      </p>
     </section>
   )
 }
@@ -590,7 +600,7 @@ function App() {
               <strong>{formatDuration(Math.min(elapsed, maxDuration))} / {formatDuration(maxDuration)}</strong>
             </section>
 
-            {plans.length > 0 && <MetricsChart plans={plans} models={resolvedModels} elapsed={elapsed} running={running && !paused} />}
+            {plans.length > 0 && <MetricsChart key={experiment.id} plans={plans} models={resolvedModels} elapsed={elapsed} running={running && !paused} />}
 
             {isCustom && plans.length === 0 && (
               <button className="empty-comparison" onClick={() => setPickerOpen(true)}><span>+</span><strong>Add your first model</strong><small>Compare cloud and local configurations in one ledger</small></button>
@@ -610,6 +620,7 @@ function App() {
                     profileId={profileIds[`${baseModel.id}:${index}`]}
                     onProfileChange={(profileId) => updateProfile(baseModel, index, profileId)}
                     outputTokens={outputTokens}
+                    color={CHART_COLORS[index % CHART_COLORS.length]}
                     onRemove={isCustom ? () => { reset(); setCustomModels((current) => current.filter((_, modelIndex) => modelIndex !== index)) } : null}
                   />
                 )

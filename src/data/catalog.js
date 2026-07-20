@@ -432,6 +432,7 @@ export const resolveModelProfile = (model, profileId) => {
 
 export const EXPERIMENT_CATEGORIES = [
   { id: 'cloud', label: 'Current cloud' },
+  { id: 'cloud-vs-local', label: 'Cloud vs local' },
   { id: 'local', label: 'Local hardware' },
   { id: 'engines', label: 'Decode engines' },
 ]
@@ -476,6 +477,30 @@ export const EXPERIMENTS = [
     description: 'The lower-cost current models for high-volume agent workloads',
     columns: 3,
     models: ['anthropic-sonnet-5', 'openai-gpt-56-luna', 'google-gemini-31-flash-lite', 'openai-gpt-54-mini', 'google-gemini-3-flash', 'anthropic-haiku-45'],
+  },
+  {
+    id: 'cloud-vs-5090',
+    category: 'cloud-vs-local',
+    name: 'Cloud vs RTX 5090',
+    description: 'Current frontier APIs compared with the fastest measured RTX 5090 configurations',
+    columns: 3,
+    models: ['anthropic-fable-5', 'openai-gpt-56-sol', 'google-gemini-31-pro', '5090-gemma26b-q6', '5090-gemma31b', '5090-qwen35b'],
+  },
+  {
+    id: 'cloud-vs-spark',
+    category: 'cloud-vs-local',
+    name: 'Cloud vs DGX Spark',
+    description: 'Current frontier APIs compared with measured large-model configurations on DGX Spark',
+    columns: 3,
+    models: ['anthropic-fable-5', 'openai-gpt-56-sol', 'google-gemini-31-pro', 'spark-qwen122b', 'spark-qwen-coder-next', 'spark-glm45-air'],
+  },
+  {
+    id: 'cloud-vs-m4',
+    category: 'cloud-vs-local',
+    name: 'Cloud vs M4 Max',
+    description: 'Current frontier APIs compared with portable local configurations on M4 Max',
+    columns: 3,
+    models: ['anthropic-fable-5', 'openai-gpt-56-sol', 'google-gemini-31-pro', 'm4-gemma26b-q6', 'm4-gemma31b', 'm4-qwen9b'],
   },
   {
     id: 'local-best',
