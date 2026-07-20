@@ -9,8 +9,8 @@ It models complete multi-request workloads instead of treating a model's decode 
 - Uncached input, cache writes, cache hits, visible output, hidden reasoning output, and tool output as separate ledger entries.
 - Per-request pricing, including provider cache rates and long-context pricing thresholds.
 - Parallel subagent wall-clock time while retaining additive token usage and cost.
-- Hardware and decode-engine profiles, including measured Qwen 3.5 122B MTP-2 results.
-- Dedicated cloud-versus-local comparisons for RTX 5090, DGX Spark, and M4 Max.
+- Hardware and decode-engine profiles, including measured Qwen 3.5 122B and Qwen3.6 27B MTP-2 results.
+- Dedicated cloud-versus-local comparisons for RTX 5090, RTX Pro 6000, DGX Spark, and M4 Max.
 - Exact configured visible output across a completed workload.
 
 The selected prompt context is added to an 18K-token coding-agent system and tool-schema baseline.

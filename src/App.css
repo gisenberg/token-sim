@@ -189,9 +189,9 @@ a:focus-visible {
 
 .eyebrow {
   display: block;
-  margin-bottom: 5px;
-  color: #94815d;
-  font-size: 0.62rem;
+  margin-bottom: 7px;
+  color: #b49a69;
+  font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -207,9 +207,9 @@ a:focus-visible {
 }
 
 .page-header p {
-  margin: 6px 0 0;
-  color: #a29884;
-  font-size: 0.83rem;
+  margin: 8px 0 0;
+  color: #c1b6a1;
+  font-size: 0.9rem;
 }
 
 .accuracy-badge {
@@ -223,7 +223,7 @@ a:focus-visible {
   border-radius: 999px;
   color: #e3c679;
   background: rgba(112, 88, 35, 0.12);
-  font-size: 0.66rem;
+  font-size: 0.72rem;
 }
 
 .accuracy-badge i {
@@ -237,7 +237,7 @@ a:focus-visible {
 .control-panel {
   display: grid;
   max-width: 1540px;
-  grid-template-columns: repeat(6, minmax(140px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1px;
   margin: 0 auto;
   overflow: hidden;
@@ -246,12 +246,49 @@ a:focus-visible {
   background: var(--line);
 }
 
-.control-panel > label {
+.control-group {
+  min-width: 0;
+  background: var(--panel);
+}
+
+.control-group > header {
+  display: flex;
+  min-height: 38px;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.control-group > header strong {
+  color: var(--text-bright);
+  font-size: 0.76rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.control-group > header span {
+  overflow: hidden;
+  color: #9e927e;
+  font-size: 0.68rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.control-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--line);
+}
+
+.control-grid > label {
   display: flex;
   min-width: 0;
-  min-height: 113px;
+  min-height: 104px;
   flex-direction: column;
-  padding: 12px;
+  padding: 11px 12px 12px;
   background: var(--panel);
 }
 
@@ -261,16 +298,16 @@ a:focus-visible {
   justify-content: space-between;
   gap: 6px;
   margin-bottom: 7px;
-  color: #9a8e79;
-  font-size: 0.62rem;
+  color: #b7aa94;
+  font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
 .control-panel label > span b {
-  color: #d7cdb9;
-  font: 600 0.65rem var(--mono);
+  color: #f0e4ce;
+  font: 600 0.72rem var(--mono);
   letter-spacing: 0;
   text-transform: none;
 }
@@ -280,33 +317,34 @@ a:focus-visible {
 .speed-control select {
   width: 100%;
   min-width: 0;
-  padding: 7px 27px 7px 8px;
-  border: 1px solid #3a3429;
+  min-height: 34px;
+  padding: 7px 29px 7px 9px;
+  border: 1px solid #4b4334;
   border-radius: 6px;
-  color: #e0d7c4;
-  background: #100e0b;
-  font-size: 0.7rem;
+  color: #f1e7d4;
+  background: #0f0d0a;
+  font-size: 0.78rem;
 }
 
 .control-panel label > small {
-  margin-top: 7px;
-  color: #958a76;
-  font-size: 0.59rem;
-  line-height: 1.35;
+  margin-top: 8px;
+  color: #aaa08d;
+  font-size: 0.65rem;
+  line-height: 1.4;
 }
 
 .cache-control button {
   display: flex;
   align-items: center;
   gap: 7px;
-  min-height: 32px;
+  min-height: 34px;
   padding: 7px 8px;
-  border: 1px solid #3a3429;
+  border: 1px solid #4b4334;
   border-radius: 6px;
-  color: #978c79;
-  background: #100e0b;
+  color: #b9ad98;
+  background: #0f0d0a;
   cursor: pointer;
-  font-size: 0.68rem;
+  font-size: 0.75rem;
   text-align: left;
 }
 
@@ -778,7 +816,8 @@ a:focus-visible {
   background: rgba(99, 230, 190, 0.09);
 }
 
-.evidence-measured {
+.evidence-measured,
+.evidence-measured-decode {
   color: #76caa8;
   background: rgba(61, 146, 112, 0.1);
 }
@@ -1315,11 +1354,11 @@ a:focus-visible {
 
 @media (max-width: 1320px) {
   .control-panel {
-    grid-template-columns: repeat(3, minmax(160px, 1fr));
+    grid-template-columns: 1fr;
   }
 
-  .control-panel > label {
-    min-height: 106px;
+  .control-grid > label {
+    min-height: 100px;
   }
 
   .model-grid {
@@ -1409,8 +1448,12 @@ a:focus-visible {
     margin-top: 0;
   }
 
-  .control-panel {
+  .control-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .control-grid > label:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
   }
 
   .transport-bar {
@@ -1438,5 +1481,22 @@ a:focus-visible {
   .model-card {
     height: 680px;
     min-height: 680px;
+  }
+}
+
+@media (max-width: 460px) {
+  .control-group > header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .control-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .control-grid > label {
+    grid-column: auto;
+    min-height: 94px;
   }
 }

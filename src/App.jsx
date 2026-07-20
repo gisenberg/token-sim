@@ -411,15 +411,17 @@ const AboutPage = () => (
 
     <h2>Speculative decoding and MTP-2</h2>
     <p>MTP uses a model's native multi-token prediction head to draft tokens that the target model verifies. The DGX Spark Qwen profile records 49 tok/s for vLLM with MTP-2, FlashInfer, and INT4+FP8, compared with 21 tok/s for the measured mainline llama.cpp configuration. The full 2.3x improvement is a stack result, not an MTP-only claim.</p>
+    <p>On RTX Pro 6000, Qwen3.6 27B FP8 was measured on the same target at 48.3 tok/s without speculative decoding, 67.5 with native MTP-1, 93.3 with native MTP-2, and 170.8 to 197.5 with DFlash. DFlash drafts token blocks in parallel and is not an MTP mode.</p>
 
     <h2>Sources and confidence</h2>
-    <p>Cloud model availability and prices link to current first-party provider documentation. Cloud decode rates are labeled as reference estimates because standard API throughput is not guaranteed. Local decode, prefill, memory, and quality data are labeled measured and link to the local-model-eval result set.</p>
+    <p>Cloud model availability and prices link to current first-party provider documentation. Cloud decode rates are labeled as reference estimates because standard API throughput is not guaranteed. Local decode, memory, and quality values link to the local-model-eval result set. RTX Pro 6000 cards say measured decode where the source measured short-prompt TTFT rather than sustained prefill throughput; their prefill rate remains an explicit simulation estimate.</p>
     <ul className="source-list">
       <li><a href={SOURCES.openaiModels}>OpenAI model catalog and pricing</a></li>
       <li><a href={SOURCES.anthropicFable}>Anthropic Fable 5</a>, <a href={SOURCES.anthropicSonnet5}>Sonnet 5</a>, and <a href={SOURCES.anthropicOpus48}>Opus 4.8</a></li>
       <li><a href={SOURCES.googlePricing}>Google Gemini API pricing</a></li>
       <li><a href={SOURCES.vllmMtp}>vLLM MTP documentation</a></li>
       <li><a href={SOURCES.spark}>Measured DGX Spark results</a></li>
+      <li><a href={SOURCES.rtxPro6000}>Measured RTX Pro 6000 rankings</a> and <a href={SOURCES.qwen36RtxPro6000}>Qwen3.6 speculative-decoding sweep</a></li>
     </ul>
     <p className="as-of">Catalog and pricing reviewed July 20, 2026.</p>
   </section>
@@ -583,13 +585,23 @@ function App() {
               <div className="accuracy-badge"><i />One ledger · exact output</div>
             </header>
 
-            <section className="control-panel">
-              <label><span>Prompt context <b>{formatTokens(promptTokens)}</b></span><select name="starting-context" value={promptTokens} onChange={(event) => changeControl(setPromptTokens, Number(event.target.value))}>{PROMPT_PRESETS.map((preset) => <option key={preset.tokens} value={preset.tokens}>{preset.label} · {formatTokens(preset.tokens)}</option>)}</select><small>{PROMPT_PRESETS.find((preset) => preset.tokens === promptTokens)?.description} · 18K system added</small></label>
-              <label><span>Visible output <b>{formatTokens(outputTokens)}</b></span><select name="visible-output" value={outputTokens} onChange={(event) => changeControl(setOutputTokens, Number(event.target.value))}>{OUTPUT_PRESETS.map((preset) => <option key={preset.tokens} value={preset.tokens}>{preset.label} · {formatTokens(preset.tokens)}</option>)}</select><small>Exact across all assistant updates</small></label>
-              <label><span>Agent loop <b>{toolSteps.length + 1} requests</b></span><select name="agent-loop" value={toolPresetIndex} onChange={(event) => changeControl(setToolPresetIndex, Number(event.target.value))}>{TOOL_PRESETS.map((preset, index) => <option key={preset.label} value={index}>{preset.label}</option>)}</select><small>{TOOL_PRESETS[toolPresetIndex].description}</small></label>
-              <label><span>Reasoning effort <b>{effort.label}</b></span><select name="reasoning-effort" value={effortId} onChange={(event) => changeControl(setEffortId, event.target.value)}>{EFFORT_LEVELS.map((level) => <option key={level.id} value={level.id}>{level.label}</option>)}</select><small>Changes billed hidden output, not decode rate</small></label>
-              <label><span>Subagents <b>{waves.reduce((sum, wave) => sum + wave.count, 0) || 'none'}</b></span><select name="subagents" value={subagentPresetIndex} onChange={(event) => changeControl(setSubagentPresetIndex, Number(event.target.value))}>{SUBAGENT_PRESETS.map((preset, index) => <option key={preset.label} value={index}>{preset.label}</option>)}</select><small>{SUBAGENT_PRESETS[subagentPresetIndex].description}</small></label>
-              <label className="cache-control"><span>Prompt caching <b>{caching ? 'on' : 'off'}</b></span><button className={caching ? 'active' : ''} onClick={() => changeControl(setCaching, !caching)}><i />{caching ? 'Warm repeated prefixes' : 'All input billed fresh'}</button><small>First request is never a cache hit</small></label>
+            <section className="control-panel" aria-label="Simulation controls">
+              <div className="control-group">
+                <header><strong>Workload</strong><span>Token volume and request pattern</span></header>
+                <div className="control-grid">
+                  <label><span>Prompt context <b>{formatTokens(promptTokens)}</b></span><select name="starting-context" value={promptTokens} onChange={(event) => changeControl(setPromptTokens, Number(event.target.value))}>{PROMPT_PRESETS.map((preset) => <option key={preset.tokens} value={preset.tokens}>{preset.label} · {formatTokens(preset.tokens)}</option>)}</select><small>{PROMPT_PRESETS.find((preset) => preset.tokens === promptTokens)?.description} · 18K system added</small></label>
+                  <label><span>Visible output <b>{formatTokens(outputTokens)}</b></span><select name="visible-output" value={outputTokens} onChange={(event) => changeControl(setOutputTokens, Number(event.target.value))}>{OUTPUT_PRESETS.map((preset) => <option key={preset.tokens} value={preset.tokens}>{preset.label} · {formatTokens(preset.tokens)}</option>)}</select><small>Exact across all assistant updates</small></label>
+                  <label><span>Agent loop <b>{toolSteps.length + 1} requests</b></span><select name="agent-loop" value={toolPresetIndex} onChange={(event) => changeControl(setToolPresetIndex, Number(event.target.value))}>{TOOL_PRESETS.map((preset, index) => <option key={preset.label} value={index}>{preset.label}</option>)}</select><small>{TOOL_PRESETS[toolPresetIndex].description}</small></label>
+                </div>
+              </div>
+              <div className="control-group">
+                <header><strong>Execution</strong><span>Reasoning, delegation, and cache behavior</span></header>
+                <div className="control-grid">
+                  <label><span>Reasoning effort <b>{effort.label}</b></span><select name="reasoning-effort" value={effortId} onChange={(event) => changeControl(setEffortId, event.target.value)}>{EFFORT_LEVELS.map((level) => <option key={level.id} value={level.id}>{level.label}</option>)}</select><small>Changes billed hidden output, not decode rate</small></label>
+                  <label><span>Subagents <b>{waves.reduce((sum, wave) => sum + wave.count, 0) || 'none'}</b></span><select name="subagents" value={subagentPresetIndex} onChange={(event) => changeControl(setSubagentPresetIndex, Number(event.target.value))}>{SUBAGENT_PRESETS.map((preset, index) => <option key={preset.label} value={index}>{preset.label}</option>)}</select><small>{SUBAGENT_PRESETS[subagentPresetIndex].description}</small></label>
+                  <label className="cache-control"><span>Prompt caching <b>{caching ? 'on' : 'off'}</b></span><button className={caching ? 'active' : ''} onClick={() => changeControl(setCaching, !caching)}><i />{caching ? 'Warm repeated prefixes' : 'All input billed fresh'}</button><small>First request is never a cache hit</small></label>
+                </div>
+              </div>
             </section>
 
             <section className="transport-bar">
