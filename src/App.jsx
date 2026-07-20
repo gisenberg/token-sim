@@ -1,1591 +1,625 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
+import {
+  EFFORT_LEVELS,
+  EXPERIMENT_CATEGORIES,
+  EXPERIMENTS,
+  HARDWARE,
+  MODELS,
+  MODEL_BY_ID,
+  OUTPUT_PRESETS,
+  PROMPT_PRESETS,
+  SOURCES,
+  SUBAGENT_PRESETS,
+  TOOL_PRESETS,
+  flattenToolSteps,
+  resolveModelProfile,
+} from './data/catalog.js'
+import {
+  buildSimulationPlan,
+  evaluatePlan,
+  getEventDuration,
+  samplePlan,
+} from './simulation/engine.js'
 
-// ── Citation URLs ──
-const CITATIONS = {
-  'RTX 5090': 'https://github.com/gisenberg/local-model-eval/blob/main/results/MODEL_RANKINGS_5090.md',
-  'M4 Max': 'https://github.com/gisenberg/local-model-eval/blob/main/results/MODEL_RANKINGS_M4MAX.md',
-  'DGX Spark': 'https://github.com/gisenberg/local-model-eval/blob/main/results/MODEL_RANKINGS_SPARK.md',
-  'Anthropic API': 'https://artificialanalysis.ai/providers/anthropic',
-  'Google API': 'https://artificialanalysis.ai/providers/google',
-  'OpenAI API': 'https://artificialanalysis.ai/providers/openai',
-  'OpenRouter Free': 'https://github.com/gisenberg/local-model-eval/blob/main/results/API_BENCH_5090.md',
-  'NVIDIA Free': 'https://github.com/gisenberg/local-model-eval/blob/main/results/API_BENCH_5090.md',
+const TIER_COLORS = { 'S+': '#f8d46a', S: '#f4c95d', A: '#5fe0a4', B: '#66b7ff', C: '#b69cff' }
+const CHART_COLORS = ['#ff806d', '#c5e86c', '#f0c766', '#e4a4e8', '#77d7ba', '#ffad5c', '#d99ae8', '#b7d26c']
+const EVENT_COLORS = {
+  network: '#536171',
+  prefill: '#e8b04e',
+  reasoning: '#c497dc',
+  'visible-decode': '#a8d66d',
+  'tool-decode': '#f49b55',
+  'tool-exec': '#65748a',
+  subagents: '#77cbb2',
+  compaction: '#f07878',
 }
 
-// weightGB: base VRAM (weights + compute buffers, no KV). Derived from measured VRAM@32K minus KV@32K.
-// kvPerTokKB: incremental KV per token. Measured from context-size deltas where available.
-// 5090 values: measured via turbo4 experiments. M4/Spark: estimated from weight sizes + arch.
-const HW_MEM = { 'RTX 5090': 32, 'M4 Max': 30, 'DGX Spark': 120, 'Anthropic API': 0, 'Google API': 0, 'OpenAI API': 0, 'OpenRouter Free': 0, 'NVIDIA Free': 0 }
-
-const MODELS = [
-  // RTX 5090 — measured VRAM from experiments/**/all_results.json (turbo4 KV @ 32K)
-  // gemma26b-q6: 25,636 MB measured. KV ~5.3 KB/tok (turbo4, 5 non-SWA layers, 2 KV heads)
-  { id: '5090-gemma26b-q6', name: 'Gemma 4 26B-A4B', quant: 'Q6_K', hardware: 'RTX 5090', tier: 'S', tokPerSec: 139, prefillRate: 2900, weightGB: 25.6, kvPerTokKB: 5.3, maxCtx: '262K', quality: '17/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#f87171', hwColor: '#86efac' },
-  // gemma31b: 28,025 MB @ 262K measured. KV breakdown: 2.7 GB non-SWA + 0.7 GB SWA = 3.4 GB total
-  { id: '5090-gemma31b', name: 'Gemma 4 31B-IT', quant: 'Q4_K_M', hardware: 'RTX 5090', tier: 'S', tokPerSec: 46, prefillRate: 1900, weightGB: 24.6, kvPerTokKB: 13, maxCtx: '262K', quality: '17/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#f87171', hwColor: '#86efac' },
-  // qwen27b-opus: 19,565 MB measured. Dense 32L, ~50 KB/tok turbo4
-  { id: '5090-qwen27b-opus', name: 'Qwen 3.5 27B Opus', quant: 'Q4_K_M', hardware: 'RTX 5090', tier: 'A', tokPerSec: 60, prefillRate: 1900, weightGB: 17.6, kvPerTokKB: 50, maxCtx: '262K', quality: '17/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#f87171', hwColor: '#86efac' },
-  // gemma26b-q4: 20,046 MB measured. Same arch as q6, ~5.3 KB/tok turbo4
-  { id: '5090-gemma26b-q4', name: 'Gemma 4 26B-A4B', quant: 'Q4_K_M', hardware: 'RTX 5090', tier: 'A', tokPerSec: 150, prefillRate: 3000, weightGB: 19.4, kvPerTokKB: 5.3, maxCtx: '262K', quality: '16/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#f87171', hwColor: '#86efac' },
-  // harmonic27b q4km: 19,995 MB measured. Qwen 27B arch, ~50 KB/tok turbo4
-  { id: '5090-harmonic27b', name: 'Harmonic 27B', quant: 'Q4_K_M', hardware: 'RTX 5090', tier: 'A', tokPerSec: 61, prefillRate: 1800, weightGB: 18.0, kvPerTokKB: 50, maxCtx: '262K', quality: '31/31', thinking: true, thinkingBudget: 16384, outputMul: 1, color: '#f87171', hwColor: '#86efac' },
-  // qwopus27b q6k: 27,912 MB @ 196K measured. DeltaNet hybrid (16/32 attn layers), 17 KB/tok turbo4
-  { id: '5090-qwopus27b', name: 'Qwopus 3.5 27B-v3', quant: 'Q6_K', hardware: 'RTX 5090', tier: 'A', tokPerSec: 50, prefillRate: 1800, weightGB: 24.7, kvPerTokKB: 17, maxCtx: '262K', quality: '16/17', thinking: false, thinkingBudget: 0, outputMul: 2.5, color: '#f87171', hwColor: '#86efac' },
-  // gemma31b-opus: 23,199 MB measured @ 32K. Same arch as gemma31b, ~13 KB/tok turbo4
-  { id: '5090-gemma31b-opus', name: 'Gemma 31B Opus-Dist.', quant: 'Q4_K_M', hardware: 'RTX 5090', tier: 'B', tokPerSec: 51, prefillRate: 2000, weightGB: 22.3, kvPerTokKB: 13, maxCtx: '262K', quality: '16/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#f87171', hwColor: '#86efac' },
-  // qwen35b-a3b: 23,910 MB measured. DeltaNet hybrid, ~5 KB/tok turbo4
-  { id: '5090-qwen35b-a3b', name: 'Qwen 3.5 35B-A3B', quant: 'Q4_K_M', hardware: 'RTX 5090', tier: 'C', tokPerSec: 174, prefillRate: 2400, weightGB: 23.2, kvPerTokKB: 5, maxCtx: '262K', quality: '11/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#f87171', hwColor: '#86efac' },
-  // qwen27b-base q6k: 24,606 MB measured. Dense 32L, ~50 KB/tok turbo4
-  { id: '5090-qwen27b-base', name: 'Qwen 3.5 27B', quant: 'Q6_K (base)', hardware: 'RTX 5090', tier: 'C', tokPerSec: 50, prefillRate: 1700, weightGB: 23.0, kvPerTokKB: 50, maxCtx: '196K', quality: '10/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#f87171', hwColor: '#86efac' },
-  // gemma-e4b: 12,108 MB measured (turbo4). Small model, ~10 KB/tok turbo4
-  { id: '5090-gemma-e4b', name: 'Gemma 4 E4B', quant: 'Q8_0', hardware: 'RTX 5090', tier: 'F', tokPerSec: 131, prefillRate: 5000, weightGB: 11.5, kvPerTokKB: 10, maxCtx: '256K', quality: '5/22', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#f87171', hwColor: '#86efac' },
-  // M4 Max — no measured VRAM in benchmarks, estimated from weight files + ~2 GB compute buffer
-  { id: 'm4-gemma31b', name: 'Gemma 4 31B-IT', quant: 'Q4_K_M', hardware: 'M4 Max', tier: 'S', tokPerSec: 15, prefillRate: 390, weightGB: 20.3, kvPerTokKB: 47, maxCtx: '128K', quality: '17/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#38bdf8', hwColor: '#93c5fd' },
-  { id: 'm4-gemma26b-q6', name: 'Gemma 4 26B-A4B', quant: 'Q6_K', hardware: 'M4 Max', tier: 'S', tokPerSec: 66, prefillRate: 980, weightGB: 24.6, kvPerTokKB: 20, maxCtx: '64K', quality: '15/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#38bdf8', hwColor: '#93c5fd' },
-  { id: 'm4-qwen27b-mlx', name: 'Qwen 27B Opus MLX', quant: '4-bit', hardware: 'M4 Max', tier: 'A', tokPerSec: 19, prefillRate: 500, weightGB: 16.0, kvPerTokKB: 200, maxCtx: '64K', quality: '13/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#38bdf8', hwColor: '#93c5fd' },
-  { id: 'm4-qwen27b-opus', name: 'Qwen 27B Opus', quant: 'Q4_K_M (planar3)', hardware: 'M4 Max', tier: 'A', tokPerSec: 16, prefillRate: 440, weightGB: 18.5, kvPerTokKB: 80, maxCtx: '128K', quality: '11/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#38bdf8', hwColor: '#93c5fd' },
-  { id: 'm4-gemma26b-q4', name: 'Gemma 4 26B-A4B', quant: 'Q4_K_M', hardware: 'M4 Max', tier: 'A', tokPerSec: 59, prefillRate: 1150, weightGB: 18.5, kvPerTokKB: 20, maxCtx: '64K', quality: '11/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#38bdf8', hwColor: '#93c5fd' },
-  { id: 'm4-qwen9b', name: 'Qwen 3.5 9B', quant: 'Q4_K_M', hardware: 'M4 Max', tier: 'B', tokPerSec: 35, prefillRate: 1750, weightGB: 7.5, kvPerTokKB: 128, maxCtx: '128K', quality: '9/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#38bdf8', hwColor: '#93c5fd' },
-  { id: 'm4-nemotron4b', name: 'Nemotron 3 Nano 4B', quant: 'Q4_K_M', hardware: 'M4 Max', tier: 'B', tokPerSec: 66, prefillRate: 2900, weightGB: 4.8, kvPerTokKB: 16, maxCtx: '128K', quality: '7/17', thinking: true, thinkingBudget: 8192, outputMul: 1, color: '#38bdf8', hwColor: '#93c5fd' },
-  // DGX Spark — no measured VRAM, estimated from weight files. KV is cheap (MoE, ~24 KB/tok f16)
-  { id: 'spark-qwen122b-ik', name: 'Qwen 3.5 122B-A10B', quant: 'Q4_K_M (ik-llama)', hardware: 'DGX Spark', tier: 'S', tokPerSec: 26, prefillRate: 627, weightGB: 73, kvPerTokKB: 24, maxCtx: '256K', quality: '17/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#a78bfa', hwColor: '#c4b5fd' },
-  { id: 'spark-qwen122b-unsloth', name: 'Qwen 3.5 122B-A10B', quant: 'Q4_K_M (mainline)', hardware: 'DGX Spark', tier: 'S', tokPerSec: 21, prefillRate: 600, weightGB: 74, kvPerTokKB: 24, maxCtx: '256K', quality: '18/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#a78bfa', hwColor: '#c4b5fd' },
-  // vLLM + FlashInfer + MTP-2 spec dec — 2.3x throughput vs llama.cpp
-  // vLLM: 66.9 GiB weights + 31.1 GiB KV pool (312K cap) + ~10.5 GiB overhead = ~108 GiB
-  { id: 'spark-qwen122b-vllm', name: 'Qwen 3.5 122B-A10B', quant: 'INT4+FP8 (vLLM)', hardware: 'DGX Spark', tier: 'S', tokPerSec: 49, prefillRate: 900, weightGB: 77, kvPerTokKB: 85, maxCtx: '256K', quality: '16/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#a78bfa', hwColor: '#c4b5fd' },
-  { id: 'spark-glm45', name: 'GLM-4.5-Air', quant: 'Q4_K_M', hardware: 'DGX Spark', tier: 'A', tokPerSec: 22, prefillRate: 627, weightGB: 72, kvPerTokKB: 24, maxCtx: '128K', quality: '15/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#a78bfa', hwColor: '#c4b5fd' },
-  { id: 'spark-qwen122b-reap', name: 'Qwen 122B REAP-20', quant: 'Q4_K_M (pruned)', hardware: 'DGX Spark', tier: 'A', tokPerSec: 29, prefillRate: 700, weightGB: 59, kvPerTokKB: 24, maxCtx: '256K', quality: '14/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#a78bfa', hwColor: '#c4b5fd' },
-  { id: 'spark-qwen122b-mainline', name: 'Qwen 122B-A10B', quant: 'Q4_K_M (bartowski)', hardware: 'DGX Spark', tier: 'A', tokPerSec: 26, prefillRate: 620, weightGB: 73, kvPerTokKB: 24, maxCtx: '256K', quality: '13/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#a78bfa', hwColor: '#c4b5fd' },
-  { id: 'spark-qwen3-coder', name: 'Qwen3-Coder-Next', quant: 'UD-Q4_K_M', hardware: 'DGX Spark', tier: 'B', tokPerSec: 50, prefillRate: 800, weightGB: 48, kvPerTokKB: 24, maxCtx: '262K', quality: '14/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#a78bfa', hwColor: '#c4b5fd' },
-  { id: 'spark-nemotron120b', name: 'Nemotron-3 Super 120B', quant: 'Q4_K_M', hardware: 'DGX Spark', tier: 'B', tokPerSec: 20, prefillRate: 500, weightGB: 89, kvPerTokKB: 24, maxCtx: '32K', quality: '11/17', thinking: true, thinkingBudget: 16384, outputMul: 1, color: '#a78bfa', hwColor: '#c4b5fd' },
-  { id: 'spark-minimax-m27', name: 'MiniMax-M2.7', quant: 'IQ3_S (empty-think)', hardware: 'DGX Spark', tier: 'B', tokPerSec: 28, prefillRate: 330, weightGB: 81, kvPerTokKB: 248, maxCtx: '96K', quality: '14/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#a78bfa', hwColor: '#c4b5fd' },
-  { id: 'spark-minimax', name: 'MiniMax-M2.5', quant: 'Q3_K_XL (empty-think)', hardware: 'DGX Spark', tier: 'C', tokPerSec: 28, prefillRate: 330, weightGB: 98, kvPerTokKB: 248, maxCtx: '32K', quality: '8/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#a78bfa', hwColor: '#c4b5fd' },
-  { id: 'spark-mistral119b', name: 'Mistral-Small-4 119B', quant: 'Q4_K_M', hardware: 'DGX Spark', tier: 'D', tokPerSec: 9, prefillRate: 350, weightGB: 71, kvPerTokKB: 24, maxCtx: '32K', quality: '7/17', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#a78bfa', hwColor: '#c4b5fd' },
-  { id: 'spark-gemma31b-dense', name: 'Gemma 4 31B-IT', quant: 'Q8_0 (dense)', hardware: 'DGX Spark', tier: 'F', tokPerSec: 7, prefillRate: 250, weightGB: 33, kvPerTokKB: 47, maxCtx: '262K', quality: 'N/A', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#a78bfa', hwColor: '#c4b5fd' },
-  // Anthropic API — speeds from Artificial Analysis, TTFT-derived prefill rates
-  // Thinking budgets: typical coding task amounts, not max capability
-  // costIn/costOut: $ per 1M tokens (input/output)
-  { id: 'cloud-opus46-1m', name: 'Claude Opus 4.6', quant: '1M context', hardware: 'Anthropic API', tier: 'S', tokPerSec: 48, prefillRate: 15000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 1500, effortProvider: 'anthropic', outputMul: 1, costIn: 5, costOut: 25, fast: { tokPerSec: 120, costIn: 30, costOut: 150 }, color: '#d97706', hwColor: '#fbbf24' },
-  { id: 'cloud-sonnet46', name: 'Claude Sonnet 4.6', quant: '1M context', hardware: 'Anthropic API', tier: 'S', tokPerSec: 66, prefillRate: 25000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 1200, effortProvider: 'anthropic', outputMul: 1, costIn: 3, costOut: 15, color: '#d97706', hwColor: '#fbbf24' },
-  { id: 'cloud-opus45', name: 'Claude Opus 4.5', quant: '200K context', hardware: 'Anthropic API', tier: 'A', tokPerSec: 52, prefillRate: 15000, weightGB: 0, kvPerTokKB: 0, maxCtx: '200K', quality: 'frontier', thinking: true, thinkingBudget: 1500, effortProvider: 'anthropic', outputMul: 1, costIn: 5, costOut: 25, color: '#d97706', hwColor: '#fbbf24' },
-  { id: 'cloud-haiku45', name: 'Claude Haiku 4.5', quant: '200K context', hardware: 'Anthropic API', tier: 'A', tokPerSec: 92, prefillRate: 60000, weightGB: 0, kvPerTokKB: 0, maxCtx: '200K', quality: 'good', thinking: false, thinkingBudget: 0, outputMul: 1, costIn: 1, costOut: 5, color: '#d97706', hwColor: '#fbbf24' },
-  // Google API
-  { id: 'cloud-gemini31pro', name: 'Gemini 3.1 Pro', quant: '1M context', hardware: 'Google API', tier: 'S', tokPerSec: 126, prefillRate: 20000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 1500, effortProvider: 'openai', outputMul: 1, costIn: 2, costOut: 12, color: '#059669', hwColor: '#34d399' },
-  { id: 'cloud-gemini25pro', name: 'Gemini 2.5 Pro', quant: '1M context', hardware: 'Google API', tier: 'S', tokPerSec: 122, prefillRate: 20000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 1500, effortProvider: 'openai', outputMul: 1, costIn: 1.25, costOut: 10, color: '#059669', hwColor: '#34d399' },
-  { id: 'cloud-gemini3flash', name: 'Gemini 3 Flash', quant: '1M context', hardware: 'Google API', tier: 'S', tokPerSec: 153, prefillRate: 60000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier', thinking: true, thinkingBudget: 800, effortProvider: 'openai', outputMul: 1, costIn: 0.5, costOut: 3, color: '#059669', hwColor: '#34d399' },
-  // OpenAI API
-  { id: 'cloud-gpt41', name: 'GPT-4.1', quant: '1M context', hardware: 'OpenAI API', tier: 'A', tokPerSec: 100, prefillRate: 30000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'good', thinking: false, thinkingBudget: 0, outputMul: 1, costIn: 2, costOut: 8, color: '#4f46e5', hwColor: '#818cf8' },
-  { id: 'cloud-o3mini', name: 'o3-mini (high)', quant: '200K context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 152, prefillRate: 30000, weightGB: 0, kvPerTokKB: 0, maxCtx: '200K', quality: 'frontier', thinking: true, thinkingBudget: 2000, effortProvider: 'openai', outputMul: 1, costIn: 1.1, costOut: 4.4, color: '#4f46e5', hwColor: '#818cf8' },
-  { id: 'cloud-gpt53-codex', name: 'GPT-5.3 Codex', quant: '400K context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 71, prefillRate: 20000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'frontier', thinking: true, thinkingBudget: 2000, effortProvider: 'openai', outputMul: 1, costIn: 1.75, costOut: 7, color: '#4f46e5', hwColor: '#818cf8' },
-  { id: 'cloud-gpt54', name: 'GPT-5.4', quant: '272K context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 83, prefillRate: 25000, weightGB: 0, kvPerTokKB: 0, maxCtx: '272K', quality: 'frontier', thinking: true, thinkingBudget: 1500, effortProvider: 'openai', outputMul: 1, costIn: 2.5, costOut: 15, longCtx: { maxCtx: '1000K', costIn: 5, costOut: 22.5, label: '1M Context' }, color: '#4f46e5', hwColor: '#818cf8' },
-  { id: 'cloud-gpt54-pro', name: 'GPT-5.4 Pro', quant: '1M context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 43, prefillRate: 15000, weightGB: 0, kvPerTokKB: 0, maxCtx: '1000K', quality: 'frontier+', thinking: true, thinkingBudget: 3000, effortProvider: 'openai', outputMul: 1, costIn: 30, costOut: 180, color: '#4f46e5', hwColor: '#818cf8' },
-  { id: 'cloud-gpt54-mini', name: 'GPT-5.4 mini', quant: '400K context', hardware: 'OpenAI API', tier: 'S', tokPerSec: 168, prefillRate: 40000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'frontier', thinking: true, thinkingBudget: 800, effortProvider: 'openai', outputMul: 1, costIn: 0.4, costOut: 1.6, color: '#4f46e5', hwColor: '#818cf8' },
-  { id: 'cloud-gpt54-nano', name: 'GPT-5.4 nano', quant: '400K context', hardware: 'OpenAI API', tier: 'A', tokPerSec: 184, prefillRate: 50000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'good', thinking: true, thinkingBudget: 500, effortProvider: 'openai', outputMul: 1, costIn: 0.2, costOut: 1.25, color: '#4f46e5', hwColor: '#818cf8' },
-  { id: 'cloud-gpt51-codex-mini', name: 'GPT-5.1 Codex mini', quant: '400K context', hardware: 'OpenAI API', tier: 'A', tokPerSec: 185, prefillRate: 45000, weightGB: 0, kvPerTokKB: 0, maxCtx: '400K', quality: 'good', thinking: true, thinkingBudget: 800, effortProvider: 'openai', outputMul: 1, costIn: 1.25, costOut: 10, color: '#4f46e5', hwColor: '#818cf8' },
-  // OpenRouter Free / NVIDIA Free — measured via api_bench.py, quality from 4-benchmark coding suite
-  // GPT-OSS 120B: 16/22 (73%) — passes ExprEval+A*+String, 0/6 on LRU (TypeScript syntax contamination)
-  { id: 'free-gpt-oss-120b', name: 'GPT-OSS 120B', quant: '131K context', hardware: 'OpenRouter Free', tier: 'B', tokPerSec: 34, prefillRate: 5000, weightGB: 0, kvPerTokKB: 0, maxCtx: '131K', quality: '16/22', thinking: false, thinkingBudget: 0, outputMul: 1, color: '#10b981', hwColor: '#6ee7b7' },
-]
-
-// ── Experiment Presets ──
-const EXPERIMENT_CATEGORIES = [
-  { id: 'cloud', label: 'Cloud API' },
-  { id: 'free-tier', label: 'Free Tier' },
-  { id: 'cloud-vs-local', label: 'Cloud vs Local' },
-  { id: 'platform', label: 'Local Platforms' },
-  { id: 'cross-platform', label: 'Cross-Platform' },
-  { id: 'architecture', label: 'Architecture' },
-  { id: 'quality-speed', label: 'Quality vs Speed' },
-  { id: 'thinking', label: 'Thinking Models' },
-]
-
-const EXPERIMENTS = [
-  // Cloud API
-  { id: 'anthropic-lineup', category: 'cloud', name: 'Anthropic Lineup', desc: 'Opus 4.6, Opus 4.5, Sonnet 4.6, Haiku 4.5', columns: 2, models: ['cloud-opus46-1m','cloud-opus45','cloud-sonnet46','cloud-haiku45'] },
-  { id: 'google-lineup', category: 'cloud', name: 'Google Lineup', desc: 'Gemini 3.1 Pro vs 3 Flash vs 2.5 Pro', columns: 3, models: ['cloud-gemini31pro','cloud-gemini3flash','cloud-gemini25pro'] },
-  { id: 'openai-lineup', category: 'cloud', name: 'OpenAI Lineup', desc: 'GPT-5.4 family + Codex models', columns: 3, models: ['cloud-gpt54','cloud-gpt54-pro','cloud-gpt54-mini','cloud-gpt54-nano','cloud-gpt53-codex','cloud-o3mini'] },
-  { id: 'cloud-all', category: 'cloud', name: 'Cloud Frontier', desc: 'Top model from each provider', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-sonnet46','cloud-gemini3flash','cloud-gpt54'] },
-{ id: 'cloud-speed', category: 'cloud', name: 'Cloud Speed Demons', desc: 'Fastest output from each provider', columns: 3, models: ['cloud-haiku45','cloud-gemini3flash','cloud-gpt54-nano'] },
-  // Free Tier
-  { id: 'free-vs-local-s', category: 'free-tier', name: 'Free API vs Local S-Tier', desc: 'GPT-OSS 120B (free) vs best local models on RTX 5090', columns: 3, models: ['free-gpt-oss-120b','5090-gemma26b-q6','5090-gemma31b','5090-harmonic27b'] },
-  { id: 'free-vs-local-c', category: 'free-tier', name: 'Free API vs Local C-Tier', desc: 'GPT-OSS 120B (free) vs Qwen 35B — same LRU gap, different models', columns: 2, models: ['free-gpt-oss-120b','5090-qwen35b-a3b'] },
-  { id: 'free-vs-paid', category: 'free-tier', name: 'Free vs Paid Cloud', desc: 'Can free models compete with frontier APIs?', columns: 3, models: ['free-gpt-oss-120b','cloud-haiku45','cloud-gpt54-nano','cloud-sonnet46'] },
-  // Cloud vs Local
-  { id: 'cloud-vs-5090', category: 'cloud-vs-local', name: 'Cloud vs RTX 5090', desc: 'Opus, Gemini Pro, GPT-5.4 vs fastest local GPU', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-gpt54','5090-gemma26b-q6','5090-gemma26b-q4','5090-qwen35b-a3b'] },
-  { id: 'cloud-vs-spark', category: 'cloud-vs-local', name: 'Cloud vs DGX Spark', desc: 'Opus, Gemini Pro, GPT-5.4 vs 122B local models', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-gpt54','spark-qwen122b-vllm','spark-qwen122b-ik','spark-qwen3-coder'] },
-  { id: 'cloud-vs-m4', category: 'cloud-vs-local', name: 'Cloud vs M4 Max', desc: 'Opus, Gemini Pro, GPT-5.4 vs portable local', columns: 3, models: ['cloud-opus46-1m','cloud-gemini31pro','cloud-gpt54','m4-gemma26b-q6','m4-gemma31b','m4-qwen9b'] },
-  // Local platforms
-  { id: '5090-best', category: 'platform', name: '5090 Best 6', desc: 'Top models on RTX 5090', columns: 3, models: ['5090-gemma26b-q6','5090-gemma31b','5090-qwen27b-opus','5090-gemma26b-q4','5090-harmonic27b','5090-qwopus27b'] },
-  { id: 'm4-best', category: 'platform', name: 'M4 Max Best 6', desc: 'Top models on M4 Max — bandwidth-limited', columns: 3, models: ['m4-gemma31b','m4-gemma26b-q6','m4-qwen27b-mlx','m4-qwen27b-opus','m4-gemma26b-q4','m4-qwen9b'] },
-  { id: 'spark-best', category: 'platform', name: 'Spark Best 6', desc: '128GB unlocks 100B+ models', columns: 3, models: ['spark-qwen122b-vllm','spark-qwen122b-ik','spark-qwen122b-unsloth','spark-glm45','spark-qwen3-coder','spark-minimax-m27'] },
-  { id: 'gemma26b-q6-xplat', category: 'cross-platform', name: 'Gemma 26B Q6: 5090 vs M4', desc: 'Same MoE model — 2.1x speed gap maps to bandwidth', columns: 2, models: ['5090-gemma26b-q6','m4-gemma26b-q6'] },
-  { id: 'gemma31b-3way', category: 'cross-platform', name: 'Gemma 31B: Three Platforms', desc: '50 vs 15 vs 7 tok/s — more memory != faster', columns: 3, models: ['5090-gemma31b','m4-gemma31b','spark-gemma31b-dense'] },
-  { id: 'gemma26b-quant-xplat', category: 'cross-platform', name: 'Gemma 26B: Q6 vs Q4 x Platform', desc: 'Quantization impact varies by hardware', columns: 2, models: ['5090-gemma26b-q6','5090-gemma26b-q4','m4-gemma26b-q6','m4-gemma26b-q4'] },
-  { id: 'moe-vs-dense-5090', category: 'architecture', name: 'MoE vs Dense on 5090', desc: 'MoE activates 3-4B params — 2-3x faster', columns: 2, models: ['5090-gemma26b-q6','5090-qwen35b-a3b','5090-gemma31b','5090-qwen27b-opus'] },
-  { id: 'moe-scale', category: 'architecture', name: 'MoE Scale: 26B to 122B', desc: '3x active params + slower HW = double penalty', columns: 3, models: ['5090-gemma26b-q6','5090-qwen35b-a3b','spark-qwen122b-ik'] },
-  { id: 'qwen122b-variants', category: 'architecture', name: 'Qwen 122B Variants', desc: 'REAP pruning saves 14GB and adds 3 tok/s', columns: 2, models: ['spark-qwen122b-ik','spark-qwen122b-unsloth','spark-qwen122b-reap','spark-qwen122b-mainline'] },
-  { id: 'small-vs-big-m4', category: 'architecture', name: 'Small vs Big on M4', desc: '26B MoE matches 4B speed at 2x quality', columns: 2, models: ['m4-nemotron4b','m4-qwen9b','m4-gemma26b-q6','m4-gemma31b'] },
-  { id: 's-tier-showdown', category: 'quality-speed', name: 'S-Tier Showdown', desc: 'Best of each platform — 7x speed range', columns: 3, models: ['5090-gemma26b-q6','5090-gemma31b','m4-gemma31b','m4-gemma26b-q6','spark-qwen122b-ik','spark-qwen122b-unsloth'] },
-  { id: 'speed-vs-quality-5090', category: 'quality-speed', name: 'Speed vs Quality on 5090', desc: 'Gemma 26B is the sweet spot', columns: 2, models: ['5090-qwen35b-a3b','5090-gemma-e4b','5090-gemma26b-q6','5090-gemma31b'] },
-  { id: 'f-tier', category: 'quality-speed', name: 'The F-Tier', desc: 'Speed without quality or quality without speed', columns: 3, models: ['5090-gemma-e4b','spark-gemma31b-dense','spark-mistral119b'] },
-  { id: 'thinking-compared', category: 'thinking', name: 'Thinking Models Compared', desc: '16K thinking = 4.4 min before output', columns: 2, models: ['5090-harmonic27b','m4-nemotron4b','spark-nemotron120b','spark-minimax'] },
-  { id: 'thinking-vs-not-5090', category: 'thinking', name: 'Thinking vs Direct on 5090', desc: 'Is reasoning worth 11x wall time?', columns: 3, models: ['5090-harmonic27b','5090-qwen27b-opus','5090-gemma26b-q6'] },
-]
-
-// ── Token Generation ──
-const CODE_RESPONSE = `I'll fix the race condition in the connection pool and add proper cleanup.
-
-The issue is in \`src/db/pool.ts\` — the \`acquire()\` method doesn't check whether a connection was already returned before handing it out again. Here's the diff:
-
-\`\`\`diff
---- a/src/db/pool.ts
-+++ b/src/db/pool.ts
-@@ -23,8 +23,12 @@ export class ConnectionPool {
-   private connections: Connection[] = [];
-   private waiting: Array<(conn: Connection) => void> = [];
-+  private inUse = new Set<string>();
-
-   async acquire(): Promise<Connection> {
-     const conn = this.connections.find(
--      (c) => c.state === "idle"
-+      (c) => c.state === "idle" && !this.inUse.has(c.id)
-     );
-     if (conn) {
-+      this.inUse.add(conn.id);
-       conn.state = "active";
-       return conn;
-     }
-@@ -45,6 +49,7 @@ export class ConnectionPool {
-   release(conn: Connection): void {
-     conn.state = "idle";
-+    this.inUse.delete(conn.id);
-     const next = this.waiting.shift();
-     if (next) {
-       next(conn);
-\`\`\`
-
-The root cause was that \`find()\` could return a connection that another async caller had already claimed but hadn't yet set to "active". The \`inUse\` set acts as a synchronous lock.
-
-I also need to update the shutdown method to wait for in-flight connections:
-
-\`\`\`typescript
-async shutdown(timeoutMs = 5000): Promise<void> {
-  this.accepting = false;
-  const deadline = Date.now() + timeoutMs;
-  while (this.inUse.size > 0 && Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 50));
-  }
-  if (this.inUse.size > 0) {
-    console.warn(\`Forcing shutdown with \${this.inUse.size} active connections\`);
-  }
-  await Promise.allSettled(this.connections.map((c) => c.close()));
-  this.connections = [];
-  this.inUse.clear();
+const DELEGATE_BY_HARDWARE = {
+  'Anthropic API': 'anthropic-sonnet-5',
+  'OpenAI API': 'openai-gpt-56-luna',
+  'Google API': 'google-gemini-31-flash-lite',
 }
-\`\`\`
 
-And the test should verify concurrent access doesn't hand out the same connection:
+const RESPONSE_PARTS = `I found the race in the connection pool and fixed the lifecycle around waiters.
 
-\`\`\`typescript
-test("concurrent acquire does not return same connection", async () => {
-  const pool = new ConnectionPool({ maxSize: 2 });
-  const [a, b] = await Promise.all([pool.acquire(), pool.acquire()]);
-  expect(a.id).not.toBe(b.id);
-  expect(pool.activeCount).toBe(2);
-  pool.release(a);
-  pool.release(b);
-  expect(pool.activeCount).toBe(0);
-});
-\`\`\`
+The implementation now removes timed-out requests atomically, closes stale connections, and records queue latency before handing a connection to the caller.
 
-The changes are backward-compatible. The \`inUse\` tracking adds negligible overhead since it's a Set lookup (O(1)).
-
-Now let me add the retry logic with exponential backoff for transient failures:
-
-\`\`\`typescript
-class RetryPolicy {
-  constructor(
-    private maxRetries = 3,
-    private baseDelayMs = 100,
-    private maxDelayMs = 5000
-  ) {}
-
-  async execute<T>(fn: () => Promise<T>): Promise<T> {
-    let lastError: Error;
-    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
-      try {
-        return await fn();
-      } catch (err) {
-        lastError = err as Error;
-        if (attempt === this.maxRetries) break;
-        if (!this.isRetryable(err)) throw err;
-        const delay = Math.min(
-          this.baseDelayMs * Math.pow(2, attempt),
-          this.maxDelayMs
-        );
-        await new Promise((r) => setTimeout(r, delay));
-      }
-    }
-    throw lastError!;
-  }
-
-  private isRetryable(err: unknown): boolean {
-    if (err instanceof ConnectionError) return true;
-    if (err instanceof TimeoutError) return true;
-    return false;
+\`\`\`ts
+async acquire(signal?: AbortSignal): Promise<Connection> {
+  const permit = await this.waiters.enqueue(signal)
+  try {
+    return await this.checkout(permit)
+  } catch (error) {
+    permit.release()
+    throw error
   }
 }
 \`\`\`
 
-The migration script needs to handle the schema change gracefully:
+The focused tests cover cancellation, timeout cleanup, concurrent release, and graceful shutdown. The full suite passes.`.split(/(\s+|(?=[{}()[\];,.]))/).filter(Boolean)
 
-\`\`\`diff
---- a/migrations/003_add_inuse_tracking.sql
-+++ b/migrations/003_add_inuse_tracking.sql
-@@ -1,4 +1,12 @@
- -- Migration: Add connection tracking metadata
-+ALTER TABLE connections
-+  ADD COLUMN in_use BOOLEAN DEFAULT FALSE,
-+  ADD COLUMN acquired_at TIMESTAMPTZ,
-+  ADD COLUMN acquired_by TEXT;
-+
-+CREATE INDEX idx_connections_in_use
-+  ON connections (in_use)
-+  WHERE in_use = TRUE;
-+
-+-- Backfill: mark all existing connections as available
-+UPDATE connections SET in_use = FALSE WHERE in_use IS NULL;
-\`\`\`
-
-Finally, the monitoring dashboard query to track pool utilization:
-
-\`\`\`typescript
-async function getPoolMetrics(pool: ConnectionPool): Promise<PoolMetrics> {
-  const total = pool.connections.length;
-  const active = pool.connections.filter((c) => c.state === "active").length;
-  const idle = total - active;
-  const waiting = pool.waiting.length;
-
-  return {
-    total,
-    active,
-    idle,
-    waiting,
-    utilization: total > 0 ? active / total : 0,
-    avgWaitMs: pool.getAverageWaitTime(),
-    p99WaitMs: pool.getPercentileWaitTime(99),
-  };
+const formatTokens = (value, digits = 1) => {
+  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(digits)}B`
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(digits)}M`
+  if (value >= 1_000) return `${(value / 1_000).toFixed(digits)}K`
+  return Math.round(value).toLocaleString()
 }
 
-// Export as Prometheus metrics
-app.get("/metrics", async (req, res) => {
-  const metrics = await getPoolMetrics(pool);
-  res.type("text/plain").send(\`
-# HELP pool_connections_total Total connections in pool
-pool_connections_total \${metrics.total}
-# HELP pool_connections_active Currently active connections
-pool_connections_active \${metrics.active}
-# HELP pool_utilization Pool utilization ratio
-pool_utilization \${metrics.utilization.toFixed(3)}
-# HELP pool_wait_avg_ms Average wait time in ms
-pool_wait_avg_ms \${metrics.avgWaitMs.toFixed(1)}
-# HELP pool_wait_p99_ms 99th percentile wait time
-pool_wait_p99_ms \${metrics.p99WaitMs.toFixed(1)}
-  \`.trim());
-});
-\`\`\`
-
-This gives us full observability into the connection pool behavior in production.
-`.trim()
-
-const tokenizeResponse = (text) => {
-  const raw = text.split(/(?<=\s)|(?=\s)|(?<=[\`\{\}\(\)\[\];:,.<>+\-=!&|])|(?=[\`\{\}\(\)\[\];:,.<>+\-=!&|])/)
-  return raw.filter(t => t.length > 0)
-}
-const RESPONSE_TOKENS = tokenizeResponse(CODE_RESPONSE)
-
-const generateText = (tokenCount) => {
-  const tokens = []
-  for (let i = 0; i < tokenCount; i++) tokens.push(RESPONSE_TOKENS[i % RESPONSE_TOKENS.length])
-  return tokens
+const formatMoney = (value) => {
+  if (value === 0) return '$0.00'
+  if (value < 0.001) return `$${value.toFixed(5)}`
+  if (value < 0.1) return `$${value.toFixed(4)}`
+  return `$${value.toFixed(2)}`
 }
 
-// ── Markdown Renderer ──
-const escapeHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-const renderMarkdown = (text) => {
-  const lines = text.split('\n')
-  let html = '', inCode = false, lang = ''
-  for (const line of lines) {
-    if (line.startsWith('```')) {
-      if (inCode) { html += '</code></pre>'; inCode = false; lang = '' }
-      else { lang = line.slice(3).trim(); html += '<pre class="md-pre"><code>'; inCode = true }
-      continue
-    }
-    if (inCode) {
-      const esc = escapeHtml(line)
-      if (lang === 'diff') {
-        if (line.startsWith('+')) html += `<span class="md-add">${esc}</span>\n`
-        else if (line.startsWith('-')) html += `<span class="md-del">${esc}</span>\n`
-        else if (line.startsWith('@@')) html += `<span class="md-hunk">${esc}</span>\n`
-        else html += esc + '\n'
-      } else html += esc + '\n'
-    } else {
-      if (line.trim() === '') { html += '<br/>'; continue }
-      let p = escapeHtml(line)
-      p = p.replace(/`([^`]+)`/g, '<code class="md-inline">$1</code>')
-      p = p.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-      html += `<span class="md-text">${p}</span>\n`
-    }
-  }
-  if (inCode) html += '</code></pre>'
-  return html
+const formatDuration = (seconds) => {
+  if (seconds < 1) return `${Math.round(seconds * 1_000)}ms`
+  if (seconds < 60) return `${seconds < 10 ? seconds.toFixed(1) : Math.round(seconds)}s`
+  const minutes = Math.floor(seconds / 60)
+  const remainder = Math.round(seconds % 60)
+  if (minutes < 60) return remainder ? `${minutes}m ${remainder}s` : `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  const minuteRemainder = minutes % 60
+  return minuteRemainder ? `${hours}h ${minuteRemainder}m` : `${hours}h`
 }
 
-// ── Constants ──
-// System prompt + tool schemas: measured ~18K for Claude Code with MCP tools
-const SYSTEM_TOKENS = 18000
+const formatRate = (value) => `${value >= 100 ? Math.round(value) : value.toFixed(1)} tok/s`
 
-// Prompt caching: system prompt + prior conversation is cached by the API provider.
-// Cached input is billed at ~10% of the full input rate (Anthropic: 10%, OpenAI: 50%, Google: 25%).
-// The "new" tokens per turn (tool result + new user message) are billed at full rate.
-const CACHE_DISCOUNT = { 'Anthropic API': 0.1, 'Google API': 0.25, 'OpenAI API': 0.5 }
-
-// Network latency per API round-trip (cloud only). Adds up across tool calls.
-const NETWORK_LATENCY_MS = 120
-
-// Prompt context = conversation history + current turn content (system tokens separate).
-// Grows ~1-20K per turn depending on tool intensity. Compaction resets accumulation.
-const PROMPT_PRESETS = [
-  { label: 'Quick fix', tokens: 500, desc: 'Fresh session, short question' },
-  { label: 'Single file', tokens: 2000, desc: '1 file read + instruction (~turn 1)' },
-  { label: 'Bug investigation', tokens: 8000, desc: '3-5 file reads, 2-3 turns' },
-  { label: 'Feature build', tokens: 25000, desc: '8-10 turns, multi-file reads + edits' },
-  { label: 'Extended session', tokens: 60000, desc: '20+ turns, test cycles, iterations' },
-  { label: 'Deep refactor', tokens: 120000, desc: '30+ turns, multi-file overhaul' },
-  { label: 'Long agent session', tokens: 250000, desc: '50+ turns on a 1M context model' },
-  { label: 'Max context', tokens: 500000, desc: 'Sustained heavy use, deep codebase' },
-]
-
-const OUTPUT_PRESETS = [
-  { label: 'Short answer', tokens: 200, desc: 'Quick explanation or fix' },
-  { label: 'Single function', tokens: 500, desc: 'One function + explanation' },
-  { label: 'File implementation', tokens: 1500, desc: 'Full file with tests' },
-  { label: 'Multi-file change', tokens: 4000, desc: 'Several files + refactor' },
-  { label: 'Large generation', tokens: 8000, desc: 'Major feature implementation' },
-  { label: 'Max output', tokens: 16000, desc: 'Pushing output limits' },
-]
-
-// Tool steps: thinkTokens = short reasoning per call, parallel = grouped concurrent calls
-// Thinking is distributed: short per tool call + remainder before final output
-const TOOL_PRESETS = [
-  { label: 'No tool calls', steps: [], desc: 'Single inference, no agent loop' },
-  { label: 'Light agent (3)', steps: [
-    { label: 'Read src/db/pool.ts', thinkTokens: 200, decodeTokens: 40, execMs: 50, resultTokens: 800 },
-    { label: 'Grep "acquire" in src/', thinkTokens: 150, decodeTokens: 35, execMs: 100, resultTokens: 400 },
-    { label: 'Edit src/db/pool.ts', thinkTokens: 400, decodeTokens: 400, execMs: 80, resultTokens: 200 },
-  ], desc: 'Read, search, edit' },
-  { label: 'Standard agent (6)', steps: [
-    { label: 'Read src/db/pool.ts', thinkTokens: 200, decodeTokens: 40, execMs: 50, resultTokens: 800 },
-    [
-      { label: 'Read src/db/types.ts', thinkTokens: 100, decodeTokens: 35, execMs: 50, resultTokens: 600 },
-      { label: 'Grep "Connection" in src/', thinkTokens: 100, decodeTokens: 35, execMs: 100, resultTokens: 500 },
-    ],
-    { label: 'Edit src/db/pool.ts', thinkTokens: 500, decodeTokens: 500, execMs: 80, resultTokens: 200 },
-    { label: 'Run npm test', thinkTokens: 100, decodeTokens: 30, execMs: 8000, resultTokens: 2000 },
-    { label: 'Edit src/db/pool.test.ts', thinkTokens: 400, decodeTokens: 600, execMs: 80, resultTokens: 300 },
-  ], desc: 'Read, search, edit, test, fix' },
-  { label: 'Deep exploration (10)', steps: [
-    { label: 'Glob src/**/*.ts', thinkTokens: 100, decodeTokens: 25, execMs: 30, resultTokens: 300 },
-    [
-      { label: 'Read src/db/pool.ts', thinkTokens: 80, decodeTokens: 40, execMs: 50, resultTokens: 800 },
-      { label: 'Read src/db/types.ts', thinkTokens: 80, decodeTokens: 35, execMs: 50, resultTokens: 600 },
-      { label: 'Read src/db/migrations.ts', thinkTokens: 80, decodeTokens: 40, execMs: 50, resultTokens: 900 },
-    ],
-    { label: 'Grep "acquire" in src/', thinkTokens: 150, decodeTokens: 35, execMs: 100, resultTokens: 500 },
-    { label: 'Read src/server/handler.ts', thinkTokens: 150, decodeTokens: 40, execMs: 50, resultTokens: 700 },
-    [
-      { label: 'Edit src/db/pool.ts', thinkTokens: 300, decodeTokens: 500, execMs: 80, resultTokens: 200 },
-      { label: 'Edit src/db/pool.test.ts', thinkTokens: 300, decodeTokens: 600, execMs: 80, resultTokens: 300 },
-    ],
-    { label: 'Run npm test', thinkTokens: 100, decodeTokens: 30, execMs: 12000, resultTokens: 2500 },
-    { label: 'Read test output', thinkTokens: 100, decodeTokens: 30, execMs: 50, resultTokens: 400 },
-  ], desc: 'Full codebase exploration, multi-file edit, test' },
-]
-
-// Subagent presets — each wave spawns N parallel inference calls.
-// Each subagent has its own context (contextPerAgent) and generates
-// output (outputPerAgent) that flows back to the main agent.
-// On local hardware (single slot), subagents run sequentially.
-const SUBAGENT_PRESETS = [
-  { label: 'No subagents', waves: [], desc: 'Sequential tool calls only' },
-  { label: '3 agents (explore)', waves: [
-    { label: 'Explore codebase', count: 3, contextPerAgent: 8000, outputPerAgent: 2000, toolsPerAgent: 3 },
-  ], desc: '1 wave: 3 agents read + analyze in parallel' },
-  { label: '2×3 agents (explore + impl)', waves: [
-    { label: 'Explore codebase', count: 3, contextPerAgent: 8000, outputPerAgent: 2000, toolsPerAgent: 3 },
-    { label: 'Implement changes', count: 3, contextPerAgent: 12000, outputPerAgent: 3000, toolsPerAgent: 4 },
-  ], desc: '2 waves: explore then implement' },
-  { label: '3×3 agents (explore + impl + test)', waves: [
-    { label: 'Explore codebase', count: 3, contextPerAgent: 8000, outputPerAgent: 2000, toolsPerAgent: 3 },
-    { label: 'Implement changes', count: 3, contextPerAgent: 12000, outputPerAgent: 3000, toolsPerAgent: 4 },
-    { label: 'Verify + fix', count: 3, contextPerAgent: 10000, outputPerAgent: 2500, toolsPerAgent: 3 },
-  ], desc: '3 waves: explore, implement, verify' },
-]
-
-// Flatten tool steps: parallel groups become a single step with combined stats
-const flattenSteps = (steps) => {
-  const flat = []
-  for (const s of steps) {
-    if (Array.isArray(s)) {
-      // Parallel group: think+decode is sum (emitted sequentially), exec is max (concurrent), results sum
-      flat.push({
-        label: s.map(t => t.label.split(' ')[0]).join(' + '),
-        parallel: s.map(t => t.label),
-        thinkTokens: s.reduce((sum, t) => sum + t.thinkTokens, 0),
-        decodeTokens: s.reduce((sum, t) => sum + t.decodeTokens, 0),
-        execMs: Math.max(...s.map(t => t.execMs)),
-        resultTokens: s.reduce((sum, t) => sum + t.resultTokens, 0),
-      })
-    } else {
-      flat.push(s)
-    }
-  }
-  return flat
+const getRoute = () => {
+  const hash = window.location.hash.slice(1)
+  if (hash === 'about') return { page: 'about', experimentId: null }
+  if (hash === 'custom') return { page: 'sim', experimentId: 'custom' }
+  return { page: 'sim', experimentId: EXPERIMENTS.some((experiment) => experiment.id === hash) ? hash : 'cloud-current' }
 }
 
-const TIER_COLORS = { S: '#fbbf24', A: '#34d399', B: '#60a5fa', C: '#a78bfa', D: '#f87171', F: '#6b7280' }
-const formatTime = (s) => s < 1 ? `${Math.round(s * 1000)}ms` : s < 10 ? `${s.toFixed(1)}s` : `${Math.round(s)}s`
-const formatTokens = (n) => {
-  if (n >= 1e12) return (n / 1e12).toFixed(1) + 'T'
-  if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B'
-  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M'
-  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K'
-  return String(n)
-}
-
-// ── TokenStream Component ──
-const TokenStream = ({ model, tokens, isRunning, isReset, isPaused, tokenCount, promptTokens, toolSteps, subagentWaves, timeScale, loopEnabled, onLoopComplete, onCostTick, onComplete, streamIndex }) => {
-  const [displayedTokens, setDisplayedTokens] = useState([])
-  const [phase, setPhase] = useState('idle')
-  const [thinkingTokensGenerated, setThinkingTokensGenerated] = useState(0)
-  const [elapsedTime, setElapsedTime] = useState(0)
-  const [prefillElapsed, setPrefillElapsed] = useState(0)
-  const [compactElapsed, setCompactElapsed] = useState(0)
-  const [prefillSize, setPrefillSize] = useState(0)
-  const [toolResultTokens, setToolResultTokens] = useState(0)
-  const [currentToolIdx, setCurrentToolIdx] = useState(-1)
-  const [toolLog, setToolLog] = useState([])
-  const [outputCount, setOutputCount] = useState(0)
-  const [wallTime, setWallTime] = useState(0)
-  const [fastMode, setFastMode] = useState(false)
-  const [longCtxMode, setLongCtxMode] = useState(true)
-  const [effortLevel, setEffortLevel] = useState('high')
-  const routing = SUBAGENT_ROUTING[model.id]
-  const [delegateId, setDelegateId] = useState(routing?.default ?? null)
-  const [activeSubagents, setActiveSubagents] = useState(0)
-  const [subagentWaveIdx, setSubagentWaveIdx] = useState(-1)
-  const [subagentTokensIn, setSubagentTokensIn] = useState(0)
-  const [subagentTokensOut, setSubagentTokensOut] = useState(0)
-  const [loopCount, setLoopCount] = useState(0)
-  const [cumulativeIn, setCumulativeIn] = useState(0)
-  const [cumulativeOut, setCumulativeOut] = useState(0)
-  const [cumulativeCost, setCumulativeCost] = useState(0)
-  const [generation, setGeneration] = useState(0) // bumped to trigger re-run
-  const intervalRef = useRef(null)
-  const timerRef = useRef(null)
-  const timeoutRef = useRef(null)
-  const loopTimeoutRef = useRef(null)
-  const startTimeRef = useRef(null)
-  const decodeStartRef = useRef(null)
-  const streamAccCtxRef = useRef(0)
-  const cumulativeCostRef = useRef(0)
-  const runCostRef = useRef(0)
-  const totalSimTimeRef = useRef(0)
-  const totalWallTimeRef = useRef(0)
-  const runSimTimeRef = useRef(0)
-  const lastTickRef = useRef(0)
-  const loopTransitionRef = useRef(false) // true during the gap between completion and selfReset
-  const hiddenTokensRef = useRef(0) // thinking + tool decode tokens (not visible but billed)
-  const cumulativeInRef = useRef(0)
-  const cumulativeOutRef = useRef(0)
-  const totalIndexRef = useRef(0)
-  const contentRef = useRef(null)
-  const rafRef = useRef(null)
-  const hasStartedRef = useRef(false)
-  const toolResultsRef = useRef(0)
-
-  // Apply toggle overrides
-  let effectiveModel = model
-  if (fastMode && model.fast) effectiveModel = { ...effectiveModel, tokPerSec: model.fast.tokPerSec, costIn: model.fast.costIn, costOut: model.fast.costOut }
-  if (longCtxMode && model.longCtx) effectiveModel = { ...effectiveModel, maxCtx: model.longCtx.maxCtx, costIn: model.longCtx.costIn, costOut: model.longCtx.costOut, quant: '1M context' }
-  else if (model.longCtx && !longCtxMode) effectiveModel = { ...effectiveModel, quant: '272K context' }
-  // Apply reasoning effort to thinking budget
-  if (model.effortProvider && model.thinkingBudget > 0) {
-    const levels = EFFORT_LEVELS[model.effortProvider]
-    const level = levels?.find(l => l.id === effortLevel) ?? levels?.find(l => l.thinkMul === 1)
-    if (level) effectiveModel = { ...effectiveModel, thinkingBudget: Math.round(model.thinkingBudget * level.thinkMul) }
-  }
-  const thinkingBudget = effectiveModel.thinkingBudget
-  const effectiveOutput = Math.round(tokenCount * (effectiveModel.outputMul || 1))
-  const totalTokens = thinkingBudget + effectiveOutput
-  const tsRef = useRef(timeScale)
-  tsRef.current = timeScale
-  const pausedRef = useRef(isPaused)
-  pausedRef.current = isPaused
-  const emRef = useRef(effectiveModel)
-  emRef.current = effectiveModel
-
-  const scrollToBottom = useCallback(() => {
-    if (rafRef.current) cancelAnimationFrame(rafRef.current)
-    rafRef.current = requestAnimationFrame(() => {
-      if (contentRef.current) contentRef.current.scrollTop = contentRef.current.scrollHeight
-    })
-  }, [])
-
-  const clearTimers = useCallback(() => {
-    if (intervalRef.current) clearInterval(intervalRef.current)
-    if (timerRef.current) clearInterval(timerRef.current)
-    if (timeoutRef.current) clearTimeout(timeoutRef.current)
-    if (loopTimeoutRef.current) clearTimeout(loopTimeoutRef.current)
-    if (rafRef.current) cancelAnimationFrame(rafRef.current)
-  }, [])
-
-  useEffect(() => () => clearTimers(), [clearTimers])
-
-  // Self-reset for loop restart (keeps cumulative state)
-  const selfReset = useCallback(() => {
-    clearTimers()
-    setDisplayedTokens([]); setPhase('idle'); setThinkingTokensGenerated(0)
-    setElapsedTime(0); setPrefillElapsed(0); setCompactElapsed(0); setPrefillSize(0)
-    setToolResultTokens(0); setCurrentToolIdx(-1); setToolLog([]); setOutputCount(0); setWallTime(0); setActiveSubagents(0); setSubagentWaveIdx(-1); setSubagentTokensIn(0); setSubagentTokensOut(0)
-    totalIndexRef.current = 0; hasStartedRef.current = false
-    startTimeRef.current = null; decodeStartRef.current = null; toolResultsRef.current = 0
-    runCostRef.current = 0; hiddenTokensRef.current = 0; runSimTimeRef.current = 0; lastTickRef.current = 0
-  }, [clearTimers])
-
-  useEffect(() => {
-    if (isReset) {
-      clearTimers()
-      if (loopTimeoutRef.current) clearTimeout(loopTimeoutRef.current)
-      setDisplayedTokens([]); setPhase('idle'); setThinkingTokensGenerated(0)
-      setElapsedTime(0); setPrefillElapsed(0); setCompactElapsed(0); setPrefillSize(0)
-      setToolResultTokens(0); setCurrentToolIdx(-1); setToolLog([]); setOutputCount(0); setWallTime(0); setActiveSubagents(0); setSubagentWaveIdx(-1); setSubagentTokensIn(0); setSubagentTokensOut(0)
-      setLoopCount(0); setCumulativeIn(0); setCumulativeOut(0); setCumulativeCost(0); setGeneration(0)
-      streamAccCtxRef.current = 0; cumulativeCostRef.current = 0; runCostRef.current = 0; totalSimTimeRef.current = 0; totalWallTimeRef.current = 0; hiddenTokensRef.current = 0; cumulativeInRef.current = 0; cumulativeOutRef.current = 0; runSimTimeRef.current = 0; lastTickRef.current = 0; loopTransitionRef.current = false
-      totalIndexRef.current = 0; hasStartedRef.current = false
-      startTimeRef.current = null; decodeStartRef.current = null; toolResultsRef.current = 0
-      return
-    }
-
-    if (isRunning && !hasStartedRef.current) {
-      hasStartedRef.current = true
-      startTimeRef.current = Date.now()
-
-      // Elapsed time: accumulated incrementally so scale changes don't rewrite history
-      lastTickRef.current = Date.now()
-      timerRef.current = setInterval(() => {
-        if (startTimeRef.current) {
-          const now = Date.now()
-          const dtMs = now - lastTickRef.current
-          lastTickRef.current = now
-          runSimTimeRef.current += (dtMs / 1000) * getTs()
-          setElapsedTime(runSimTimeRef.current.toFixed(1))
-          setOutputCount(totalIndexRef.current)
-          const simTime = runSimTimeRef.current
-          const runIn = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current + toolResultsRef.current
-          const runOut = hiddenTokensRef.current + totalIndexRef.current
-          // Compute cost with prompt caching: cached prefix at discount, new tokens at full rate
-          const em = emRef.current
-          if (em.costIn != null) {
-            const inRate = em.costIn
-            const outRate = em.costOut
-            const cacheDiscount = CACHE_DISCOUNT[em.hardware] ?? 1
-            // Cached = system + prior prompt history, uncached = new tool results this turn
-            const cachedIn = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current
-            const uncachedIn = toolResultsRef.current
-            runCostRef.current = ((cachedIn / 1e6) * inRate * cacheDiscount) + ((uncachedIn / 1e6) * inRate) + ((runOut / 1e6) * outRate)
-          }
-          if (onCostTick && !loopTransitionRef.current) {
-            onCostTick(streamIndex, totalSimTimeRef.current + simTime, {
-              cost: cumulativeCostRef.current + runCostRef.current,
-              input: runIn + (cumulativeInRef.current ?? 0),
-              output: runOut + (cumulativeOutRef.current ?? 0),
-            })
-          }
-        }
-      }, 200)
-
-      const isCloud = HW_MEM[model.hardware] === 0
-      const waves = isCloud ? (subagentWaves ?? []) : []
-      const maxCtx = parseInt(emRef.current.maxCtx) * 1000
-      const totalToolResult = toolSteps.reduce((s, t) => s + t.resultTokens + t.decodeTokens, 0)
-      const totalSubagentResult = waves.reduce((s, w) => s + w.count * w.outputPerAgent, 0)
-      const fullUsed = SYSTEM_TOKENS + promptTokens + totalToolResult + totalSubagentResult + thinkingBudget + effectiveOutput
-      const needsCompact = fullUsed / maxCtx > 0.8
-      const compactTokens = needsCompact ? Math.max(0, fullUsed - maxCtx * 0.6) : 0
-      const compactMs = needsCompact ? (compactTokens / (emRef.current.prefillRate * 0.5)) * 1000 : 0
-
-      // Animate a progress bar over durationMs, then call next()
-      const getTs = () => pausedRef.current ? 0.0001 : (tsRef.current || 1)
-      const animateBar = (setter, durationMs, next) => {
-        const start = Date.now()
-        let elapsed = 0
-        const tick = () => {
-          const dt = Date.now() - start
-          const scaledMs = durationMs / getTs()
-          const p = Math.min(dt / scaledMs, 1)
-          setter(p)
-          if (p < 1) timeoutRef.current = setTimeout(tick, 16)
-          else next()
-        }
-        tick()
-      }
-
-      // Thinking: distributed across tool steps + final output
-      // Total thinking per tool step is step.thinkTokens (short reasoning per call)
-      // Remaining thinking budget goes to the final output synthesis
-      const totalStepThinking = toolSteps.reduce((s, t) => s + (t.thinkTokens ?? 0), 0)
-      const finalThinking = thinkingBudget > 0
-        ? Math.max(0, thinkingBudget - (toolSteps.length > 0 ? totalStepThinking : 0))
-        : 0
-
-      // Simulate thinking for N tokens, then call next()
-      const doThinking = (thinkCount, next) => {
-        if (thinkCount <= 0) { next(); return }
-        setPhase('thinking')
-        setThinkingTokensGenerated(0)
-        const baseDurationMs = (thinkCount / emRef.current.tokPerSec) * 1000
-        const thinkStart = Date.now()
-        const hiddenBefore = hiddenTokensRef.current
-        const tickThink = () => {
-          const elapsed = Date.now() - thinkStart
-          const thinkMs = baseDurationMs / getTs()
-          const generated = Math.min(Math.floor((elapsed / thinkMs) * thinkCount), thinkCount)
-          setThinkingTokensGenerated(generated)
-          hiddenTokensRef.current = hiddenBefore + generated
-          if (elapsed < thinkMs) timeoutRef.current = setTimeout(tickThink, 50)
-          else { setThinkingTokensGenerated(thinkCount); hiddenTokensRef.current = hiddenBefore + thinkCount; next() }
-        }
-        tickThink()
-      }
-
-      // Stream N tokens of visible output, then call next()
-      // Uses time-based batching: at high timeScales, emits multiple tokens per tick
-      const streamTokens = (target, onDone) => {
-        const streamStart = Date.now()
-        const baseIndex = totalIndexRef.current
-        const tickInterval = 16
-        intervalRef.current = setInterval(() => {
-          const elapsed = Date.now() - streamStart
-          const tokPerMs = emRef.current.tokPerSec * getTs() / 1000
-          const shouldBe = Math.min(baseIndex + Math.floor(elapsed * tokPerMs), target)
-          if (totalIndexRef.current < shouldBe) {
-            const batch = []
-            while (totalIndexRef.current < shouldBe) {
-              batch.push(tokens[totalIndexRef.current])
-              totalIndexRef.current++
-            }
-            setDisplayedTokens(prev => [...prev, ...batch])
-          }
-          if (totalIndexRef.current >= target || totalIndexRef.current >= effectiveOutput) {
-            clearInterval(intervalRef.current)
-            onDone()
-          }
-        }, tickInterval)
-      }
-
-      const streamChunk = (count, next) => {
-        if (count <= 0) { next(); return }
-        setPhase('streaming')
-        streamTokens(totalIndexRef.current + count, next)
-      }
-
-      // Prefill then call next()
-      const startPrefill = (contextSize, next) => {
-        setPhase('prefill')
-        setPrefillElapsed(0)
-        setPrefillSize(contextSize)
-        // Cloud: cached prefix is near-instant, only new tokens need full prefill.
-        // Model as 10% of cached tokens + 100% of new tokens.
-        const effectiveSize = isCloud ? Math.max(contextSize * 0.1, 500) : contextSize
-        const prefillMs = (effectiveSize / emRef.current.prefillRate) * 1000 + (isCloud ? NETWORK_LATENCY_MS / getTs() : 0)
-        animateBar(setPrefillElapsed, prefillMs, next)
-      }
-
-      // Distribute output across tool steps: ~15% per step, remainder at end
-      const numSteps = toolSteps.length
-      // Output variance: ±30% per run to model real-world variation
-      // (some turns produce short answers, others full implementations)
-      const outputVariance = 0.7 + Math.random() * 0.6
-      const variedOutput = Math.round(effectiveOutput * outputVariance)
-      const perStepOutput = numSteps > 0 ? Math.floor(variedOutput * 0.15 / numSteps) : 0
-      const finalOutput = variedOutput - (perStepOutput * numSteps)
-
-      // Track tokens added in previous step for incremental prefill
-      let lastStepTokens = 0
-
-      // Run subagent waves sequentially, then call next()
-      // waves already defined above
-      const runSubagentWave = (waveIdx, next) => {
-        if (waveIdx >= waves.length) { setActiveSubagents(0); setSubagentWaveIdx(-1); next(); return }
-        const wave = waves[waveIdx]
-        setSubagentWaveIdx(waveIdx)
-        setActiveSubagents(wave.count)
-        setPhase('subagents')
-
-        // Each subagent: prefill its context + run its tools + generate output
-        // Cost: count × (contextPerAgent input + outputPerAgent output)
-        // Wall time: subagent inference time (context/prefillRate + tools + output/tokPerSec)
-        const agentPrefillMs = (wave.contextPerAgent / emRef.current.prefillRate) * 1000
-        const agentToolMs = (wave.toolsPerAgent ?? 3) * 500 // ~500ms per tool avg
-        const agentDecodeMs = (wave.outputPerAgent / emRef.current.tokPerSec) * 1000
-        const waveMs = (agentPrefillMs + agentToolMs + agentDecodeMs) / getTs()
-
-        // Track subagent tokens
-        const waveInputTotal = wave.count * wave.contextPerAgent
-        const waveOutputTotal = wave.count * wave.outputPerAgent
-        setSubagentTokensIn(prev => prev + waveInputTotal)
-        setSubagentTokensOut(prev => prev + waveOutputTotal)
-
-        // Subagent results flow back as context for main agent
-        toolResultsRef.current += waveOutputTotal
-        setToolResultTokens(toolResultsRef.current)
-
-        // Bill subagent tokens at the DELEGATE model's rates, not the main agent's
-        const delegateModel = delegateId ? MODELS.find(m => m.id === delegateId) : null
-        if (delegateModel && delegateModel.costIn != null) {
-          const delegateCost = (waveInputTotal / 1e6) * delegateModel.costIn + (waveOutputTotal / 1e6) * delegateModel.costOut
-          cumulativeCostRef.current += delegateCost
-          setCumulativeCost(prev => prev + delegateCost)
-        } else {
-          // No delegate — bill at main agent's rate via hidden tokens
-          hiddenTokensRef.current += waveOutputTotal
-        }
-        const delegateLabel = delegateModel ? ` via ${delegateModel.name}` : ''
-        setToolLog(prev => [...prev, { label: `${wave.label} (${wave.count} agents${delegateLabel})`, tokens: waveOutputTotal, subagent: true }])
-
-        // Animate the wave duration
-        const waveStart = Date.now()
-        const tickWave = () => {
-          const elapsed = Date.now() - waveStart
-          // Count down active subagents as they "complete"
-          const completed = Math.min(Math.floor((elapsed / waveMs) * wave.count), wave.count)
-          setActiveSubagents(wave.count - completed)
-          if (elapsed < waveMs) {
-            timeoutRef.current = setTimeout(tickWave, 100)
-          } else {
-            setActiveSubagents(0)
-            runSubagentWave(waveIdx + 1, next)
-          }
-        }
-        tickWave()
-      }
-
-      // Run tool step i, then continue
-      const runToolStep = (i) => {
-        if (i >= numSteps) {
-          // All tool calls done — run subagent waves, then final output
-          const afterSubagents = () => {
-            lastStepTokens = waves.length > 0 ? waves.reduce((s, w) => s + w.count * w.outputPerAgent, 0) : lastStepTokens
-          }
-          const doFinal = () => {
-            if (!decodeStartRef.current) decodeStartRef.current = Date.now()
-            const thinkAmount = numSteps === 0 ? thinkingBudget : finalThinking
-            doThinking(thinkAmount, () => {
-              streamChunk(finalOutput, () => {
-                clearInterval(timerRef.current)
-                setElapsedTime(runSimTimeRef.current.toFixed(1))
-                setPhase('complete')
-                onComplete(streamIndex)
-
-                // Per-stream loop: accumulate tallies, grow context, restart
-                if (loopEnabled) {
-                  const toolTok = toolSteps.reduce((s, t) => s + (t.resultTokens ?? 0) + (t.decodeTokens ?? 0) + (t.thinkTokens ?? 0), 0)
-                  // Include subagent output — it flowed back as context via toolResultsRef
-                  const subagentTok = waves.reduce((s, w) => s + w.count * (w.outputPerAgent + w.contextPerAgent), 0)
-                  const inTok = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current + toolTok + subagentTok
-                  const outTok = totalIndexRef.current + hiddenTokensRef.current + waves.reduce((s, w) => s + w.count * w.outputPerAgent, 0)
-                  cumulativeInRef.current += inTok
-                  cumulativeOutRef.current += outTok
-                  setCumulativeIn(prev => prev + inTok)
-                  setCumulativeOut(prev => prev + outTok)
-                  setLoopCount(prev => prev + 1)
-                  // Accumulate cost with prompt caching
-                  const em = emRef.current
-                  if (em.costIn != null) {
-                    const cd = CACHE_DISCOUNT[em.hardware] ?? 1
-                    const cachedIn = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current
-                    const uncachedIn = toolTok + subagentTok
-                    const addCost = ((cachedIn / 1e6) * em.costIn * cd) + ((uncachedIn / 1e6) * em.costIn) + ((outTok / 1e6) * em.costOut)
-                    cumulativeCostRef.current += addCost
-                    setCumulativeCost(prev => prev + addCost)
-                  }
-
-                  // Accumulate context for next loop; compact if >80% of max ctx
-                  const turnTokens = outTok + toolTok + subagentTok
-                  const maxCtx = parseInt(emRef.current.maxCtx) * 1000
-                  const nextTotal = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current + turnTokens
-                  if (nextTotal / maxCtx > 0.8) {
-                    streamAccCtxRef.current = Math.round((streamAccCtxRef.current + turnTokens) * 0.2)
-                  } else {
-                    streamAccCtxRef.current += turnTokens
-                  }
-
-                  // Freeze reporting during the gap between completion and selfReset
-                  loopTransitionRef.current = true
-                  totalSimTimeRef.current += runSimTimeRef.current
-                  if (startTimeRef.current) {
-                    totalWallTimeRef.current += (Date.now() - startTimeRef.current) / 1000
-                  }
-                  runCostRef.current = 0
-
-                  if (onLoopComplete) onLoopComplete(streamIndex)
-                  loopTimeoutRef.current = setTimeout(() => {
-                    selfReset()
-                    loopTransitionRef.current = false
-                    setGeneration(g => g + 1) // trigger effect re-run
-                  }, 300)
-                }
-              })
-            })
-          }
-          // Tool calls → subagent waves → prefill subagent results → final output
-          const startFinal = () => {
-            afterSubagents()
-            if (lastStepTokens > 0) startPrefill(lastStepTokens, doFinal)
-            else doFinal()
-          }
-          if (waves.length > 0) runSubagentWave(0, startFinal)
-          else startFinal()
-          return
-        }
-
-        const step = toolSteps[i]
-        setCurrentToolIdx(i)
-
-        // First call: prefill user prompt + accumulated context from prior loops.
-        // Subsequent: only new tokens since last call (incremental KV).
-        const prefillCtx = i === 0
-          ? promptTokens + streamAccCtxRef.current
-          : lastStepTokens
-
-        // Prefill → think → tool-call decode → tool exec → stream output chunk → next
-        startPrefill(prefillCtx, () => {
-          const stepThink = thinkingBudget > 0 ? (step.thinkTokens ?? 0) : 0
-          doThinking(stepThink, () => {
-            // Stream a chunk of output (analysis/explanation before the tool call)
-            if (!decodeStartRef.current) decodeStartRef.current = Date.now()
-            streamChunk(perStepOutput, () => {
-              setPhase('tool-decode')
-              const decodeDurationMs = (step.decodeTokens / emRef.current.tokPerSec) * 1000
-              const decodeHiddenBefore = hiddenTokensRef.current
-              const decodeStart = Date.now()
-              const tickDecode = () => {
-                const el = Date.now() - decodeStart
-                const decodeMs = decodeDurationMs / getTs()
-                hiddenTokensRef.current = decodeHiddenBefore + Math.min(Math.floor((el / decodeMs) * step.decodeTokens), step.decodeTokens)
-                if (el < decodeMs) { timeoutRef.current = setTimeout(tickDecode, 50); return }
-                hiddenTokensRef.current = decodeHiddenBefore + step.decodeTokens
-                setPhase('tool-exec')
-                const logEntries = step.parallel
-                  ? step.parallel.map(l => ({ label: l, tokens: 0 }))
-                  : [{ label: step.label, tokens: step.resultTokens }]
-                if (step.parallel) {
-                  logEntries[logEntries.length - 1].tokens = step.resultTokens
-                }
-                setToolLog(prev => [...prev, ...logEntries.map((e, idx) => ({
-                  ...e,
-                  tokens: step.parallel ? Math.round(step.resultTokens / step.parallel.length) : step.resultTokens,
-                  parallel: step.parallel && idx > 0,
-                }))])
-                timeoutRef.current = setTimeout(() => {
-                  const added = step.resultTokens + step.decodeTokens + stepThink + perStepOutput
-                  toolResultsRef.current += added
-                  lastStepTokens = added
-                  setToolResultTokens(toolResultsRef.current)
-                  runToolStep(i + 1)
-                }, (step.execMs + (isCloud ? NETWORK_LATENCY_MS : 0)) / getTs())
-              }
-              tickDecode()
-            })
-          })
-        })
-      }
-
-      const beginToolLoop = () => {
-        if (toolSteps.length === 0) {
-          // System tokens already cached, prefill user prompt + accumulated context
-          startPrefill(promptTokens + streamAccCtxRef.current, startFinalDecode)
-        } else {
-          runToolStep(0)
-        }
-      }
-
-      if (needsCompact) {
-        setPhase('compacting')
-        animateBar(setCompactElapsed, compactMs, beginToolLoop)
-      } else {
-        beginToolLoop()
-      }
-    }
-
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current)
-      if (timerRef.current) clearInterval(timerRef.current)
-    }
-  }, [isRunning, isReset, model, promptTokens, thinkingBudget, effectiveOutput, totalTokens, tokens, toolSteps, loopEnabled, generation, onComplete, streamIndex, clearTimers, selfReset])
-
-  useEffect(() => {
-    if (displayedTokens.length > 0 || toolLog.length > 0) scrollToBottom()
-  }, [displayedTokens, toolLog, scrollToBottom])
-
-  const totalProgress = totalTokens > 0 ? ((thinkingTokensGenerated + displayedTokens.length) / totalTokens) * 100 : 0
-  const decodeElapsed = decodeStartRef.current ? (Date.now() - decodeStartRef.current) * (timeScale || 1) / 1000 : 0
-  const rate = displayedTokens.length > 0 && decodeElapsed > 0 ? (displayedTokens.length / decodeElapsed).toFixed(1) : null
-
-  const phaseLabels = { idle: 'Ready', compacting: 'Compacting', prefill: 'Prefill', 'tool-decode': 'Tool Call', 'tool-exec': 'Executing', subagents: 'Subagents', thinking: 'Thinking', streaming: 'Streaming', complete: 'Done' }
-  const statusLabel = phaseLabels[phase]
-  const isActive = phase !== 'idle' && phase !== 'complete'
-  const cardClass = ['stream-card', isActive && 'is-running', phase === 'complete' && 'is-complete'].filter(Boolean).join(' ')
-  const thinkingLabel = model.thinking ? (thinkingBudget > 0 ? thinkingBudget.toLocaleString() : 'Off') : 'Off'
-
-  // Context bar — dynamic based on accumulated tool results
-  const maxCtxTokens = parseInt(emRef.current.maxCtx) * 1000
-  const usedTokens = SYSTEM_TOKENS + promptTokens + streamAccCtxRef.current + toolResultTokens + thinkingBudget + effectiveOutput
-  const overflows = usedTokens > maxCtxTokens
-  const pct = (n) => Math.min((n / maxCtxTokens) * 100, 100)
-  const effectivePrompt = promptTokens + streamAccCtxRef.current
-  const systemPct = pct(SYSTEM_TOKENS)
-  const promptPct = Math.min(pct(effectivePrompt), 100 - systemPct)
-  const toolPct = Math.min(pct(toolResultTokens), Math.max(0, 100 - systemPct - promptPct))
-  const thinkPct = Math.min(pct(thinkingBudget), Math.max(0, 100 - systemPct - promptPct - toolPct))
-  const outPct = Math.min(pct(effectiveOutput), Math.max(0, 100 - systemPct - promptPct - toolPct - thinkPct))
-
-  // VRAM breakdown
-  const hwTotal = HW_MEM[model.hardware] ?? 32
-  // KV cache is allocated for the full context window, not just tokens in use
-  const kvGB = (model.kvPerTokKB * maxCtxTokens) / 1024 / 1024
-  const totalVram = model.weightGB + kvGB
-  const weightDeg = (model.weightGB / hwTotal) * 360
-  const kvDeg = (kvGB / hwTotal) * 360
-  const vramOverflow = totalVram > hwTotal
-
-  const markdownHtml = displayedTokens.length > 0 ? renderMarkdown(displayedTokens.join('')) : ''
-  const currentStep = currentToolIdx >= 0 && currentToolIdx < toolSteps.length ? toolSteps[currentToolIdx] : null
-
+const OutputPreview = ({ count, complete }) => {
+  if (count <= 0) return <div className="stream-empty">Output will appear here</div>
+  const previewSize = Math.min(260, count)
+  const start = Math.max(0, count - previewSize)
+  const chunks = []
+  for (let index = start; index < count; index += 1) chunks.push(RESPONSE_PARTS[index % RESPONSE_PARTS.length])
   return (
-    <div className={cardClass}>
-      <div className="card-accent" style={{ background: model.color }} />
+    <pre className="output-preview">
+      {start > 0 && <span className="output-omitted">... {start.toLocaleString()} earlier output tokens ...{`\n\n`}</span>}
+      {chunks.join('')}
+      {!complete && <span className="cursor" />}
+    </pre>
+  )
+}
 
-      <div className="card-header">
-        <div className="model-info">
-          <div className="model-title-row">
-            <span className="tier-badge" style={{ background: TIER_COLORS[model.tier] }}>{model.tier}</span>
-            <span className="model-name">{model.name}</span>
-          </div>
-          <span className="model-quant">
-            {hwTotal > 0 && effectiveModel.quant}
-            <a className="citation-link" href={CITATIONS[model.hardware]} target="_blank" rel="noopener noreferrer" title="View benchmark data">cite</a>
-            {model.fast && <label className="fast-toggle"><input type="checkbox" checked={fastMode} onChange={(e) => setFastMode(e.target.checked)} />Fast</label>}
-            {model.longCtx && <label className="fast-toggle"><input type="checkbox" checked={longCtxMode} onChange={(e) => setLongCtxMode(e.target.checked)} />{model.longCtx.label}</label>}
-            {model.effortProvider && <select className="effort-select" value={effortLevel} onChange={(e) => setEffortLevel(e.target.value)} title="Reasoning effort">
-              {(EFFORT_LEVELS[model.effortProvider] ?? []).map(l => <option key={l.id} value={l.id}>{l.label}</option>)}
-            </select>}
-            {routing && <select className="effort-select" value={delegateId ?? ''} onChange={(e) => setDelegateId(e.target.value)} title="Subagent delegate model">
-              {routing.options.map(oid => { const m = MODELS.find(x => x.id === oid); return m ? <option key={oid} value={oid}>{m.name}</option> : null })}
-            </select>}
-          </span>
-        </div>
-        <span className={`card-status ${phase}`}>{statusLabel}</span>
+const Timeline = ({ plan, elapsed }) => (
+  <div className="timeline-wrap" aria-label="Simulation phase timeline">
+    <div className="timeline-track">
+      {plan.events.map((event, index) => (
+        <span
+          key={`${event.kind}-${event.start}-${index}`}
+          className="timeline-segment"
+          title={`${event.label}: ${formatDuration(event.duration)}`}
+          style={{
+            width: `${plan.duration ? event.duration / plan.duration * 100 : 0}%`,
+            background: EVENT_COLORS[event.kind],
+          }}
+        />
+      ))}
+      <span className="timeline-playhead" style={{ left: `${plan.duration ? Math.min(100, elapsed / plan.duration * 100) : 0}%` }} />
+    </div>
+    <div className="timeline-legend">
+      {['prefill', 'reasoning', 'visible-decode', 'tool-exec'].map((kind) => (
+        <span key={kind}><i style={{ background: EVENT_COLORS[kind] }} />{kind === 'visible-decode' ? 'visible decode' : kind.replace('-', ' ')}</span>
+      ))}
+    </div>
+  </div>
+)
+
+const ContextMeter = ({ plan }) => {
+  const peakPercent = Math.min(100, plan.context.peak / plan.context.max * 100)
+  return (
+    <div className="context-block">
+      <div className="meter-label">
+        <span>Peak context</span>
+        <strong>{formatTokens(plan.context.peak)} / {formatTokens(plan.context.max)}</strong>
       </div>
-
-      <div className="hw-row">
-        <span className="hw-badge" style={{ color: model.hwColor }}>{model.hardware}</span>
-        <span className="hw-spec">{effectiveModel.tokPerSec} tok/s</span>
-        <span className="hw-spec">{model.quality}</span>
+      <div className={`context-meter ${plan.context.overflow ? 'is-overflow' : ''}`}>
+        <span style={{ width: `${peakPercent}%` }} />
+        <i style={{ left: '80%' }} title="Compaction threshold" />
       </div>
-
-      <div className="ctx-bar-wrapper">
-        <div className="ctx-bar-labels">
-          <span>Context: {usedTokens.toLocaleString()} / {maxCtxTokens.toLocaleString()}{overflows ? ' — overflow!' : ''}</span>
-        </div>
-        <div className={`ctx-bar ${overflows ? 'ctx-overflow' : ''}`}>
-          <span className="ctx-bar-tick" /><span className="ctx-bar-tick-label">compact</span>
-          <div className="ctx-bar-fill-area">
-            <div className="ctx-seg ctx-system" style={{ width: `${systemPct}%` }} />
-            <div className="ctx-seg ctx-prompt" style={{ width: `${promptPct}%` }} />
-            {toolResultTokens > 0 && <div className="ctx-seg ctx-tool" style={{ width: `${toolPct}%` }} />}
-            {thinkingBudget > 0 && <div className="ctx-seg ctx-thinking" style={{ width: `${thinkPct}%` }} />}
-            <div className="ctx-seg ctx-output" style={{ width: `${outPct}%` }} />
-          </div>
-        </div>
-        <div className="ctx-bar-legend">
-          <span className="ctx-legend-item"><span className="ctx-swatch ctx-system" />System</span>
-          <span className="ctx-legend-item"><span className="ctx-swatch ctx-prompt" />Prompt</span>
-          {(toolSteps.length > 0 || toolResultTokens > 0) && <span className="ctx-legend-item"><span className="ctx-swatch ctx-tool" />Tools</span>}
-          {thinkingBudget > 0 && <span className="ctx-legend-item"><span className="ctx-swatch ctx-thinking" />Thinking</span>}
-          <span className="ctx-legend-item"><span className="ctx-swatch ctx-output" />Output</span>
-          <span className="ctx-legend-item ctx-free">{Math.max(0, maxCtxTokens - usedTokens).toLocaleString()} free</span>
-        </div>
-      </div>
-
-      {hwTotal === 0 && effectiveModel.costIn != null && (() => {
-        const inRate = effectiveModel.costIn
-        const outRate = effectiveModel.costOut
-        const discount = CACHE_DISCOUNT[effectiveModel.hardware] ?? 1
-        const totalCost = cumulativeCostRef.current + runCostRef.current
-        const rateLabel = `$${inRate}/$${outRate} per 1M (${Math.round((1 - discount) * 100)}% cache discount)`
-        return (
-          <div className="cost-row">
-            <div className="cost-total">${totalCost < 0.01 ? totalCost.toFixed(4) : totalCost.toFixed(2)}</div>
-            <div className="cost-detail">
-              <span className="cost-item">{rateLabel}</span>
-              <span className="cost-item cost-breakdown">{loopCount > 0 ? `${loopCount} prior + ` : ''}this run $${runCostRef.current < 0.01 ? runCostRef.current.toFixed(4) : runCostRef.current.toFixed(3)}</span>
-            </div>
-          </div>
-        )
-      })()}
-
-      {hwTotal > 0 && (
-        <div className="vram-row">
-          <div
-            className={`vram-donut ${vramOverflow ? 'vram-overflow' : ''}`}
-            style={{ background: `conic-gradient(#60a5fa 0deg ${weightDeg}deg, #f59e0b ${weightDeg}deg ${weightDeg + kvDeg}deg, var(--border) ${weightDeg + kvDeg}deg 360deg)` }}
-          ><div className="vram-donut-hole" /></div>
-          <div className="vram-text">
-            <span className="vram-total">{totalVram.toFixed(1)} / {hwTotal} GB{vramOverflow ? ' !' : ''}</span>
-            <span className="vram-detail">
-              <span className="vram-item"><span className="vram-dot" style={{ background: '#60a5fa' }} />Weights {model.weightGB.toFixed(1)}</span>
-              <span className="vram-item"><span className="vram-dot" style={{ background: '#f59e0b' }} />KV {kvGB.toFixed(1)}</span>
-              <span className="vram-item vram-free">{Math.max(0, hwTotal - totalVram).toFixed(1)} free</span>
-            </span>
-          </div>
-        </div>
-      )}
-
-      <div className="stats-row">
-        <div className="stat"><span className="stat-label">Output{model.outputMul > 1 ? ` (${model.outputMul}x)` : ''}</span><span className="stat-value">{outputCount.toLocaleString()} / {effectiveOutput.toLocaleString()}</span></div>
-        <div className="stat"><span className="stat-label">Thinking</span><span className={`stat-value ${!model.thinking ? 'stat-dim' : ''}`}>{thinkingLabel}</span></div>
-        {rate && <div className="stat"><span className="stat-label">Actual</span><span className="stat-value">{rate} tok/s</span></div>}
-        {loopCount > 0 && <div className="stat"><span className="stat-label">Total ({loopCount} runs)</span><span className="stat-value">{formatTokens(cumulativeIn)} in / {formatTokens(cumulativeOut)} out</span></div>}
-      </div>
-
-      <div className="progress-track"><div className="progress-fill" style={{ width: `${totalProgress}%`, background: model.color }} /></div>
-
-      {phase === 'compacting' && (
-        <div className="compact-banner"><span className="compact-spinner" /><div className="compact-detail"><span>Compacting context</span><div className="compact-bar"><div className="compact-bar-fill" style={{ width: `${compactElapsed * 100}%` }} /></div></div></div>
-      )}
-
-      {phase === 'prefill' && (
-        <div className="prefill-banner"><div className="prefill-bar"><div className="prefill-bar-fill" style={{ width: `${prefillElapsed * 100}%`, background: model.color }} /></div><span className="prefill-label">{toolResultTokens > 0 ? 'Incremental prefill' : 'Prefilling'} {prefillSize.toLocaleString()} tokens @ {emRef.current.prefillRate} tok/s — {formatTime(prefillSize / emRef.current.prefillRate)}</span></div>
-      )}
-
-      {(phase === 'tool-decode' || phase === 'tool-exec') && currentStep && (
-        <div className="tool-banner">
-          <span className={`tool-icon ${phase === 'tool-exec' ? 'tool-running' : ''}`}>{phase === 'tool-exec' ? '⚙' : '→'}</span>
-          <span className="tool-label">{currentStep.parallel ? currentStep.parallel.join(', ') : currentStep.label}</span>
-          {phase === 'tool-exec' && <span className="tool-exec-badge">{currentStep.parallel ? 'parallel' : 'executing'}</span>}
-        </div>
-      )}
-
-      {phase === 'thinking' && (
-        <div className="thinking-banner"><span className="thinking-spinner" /><div className="thinking-detail"><span>Thinking</span><span className="thinking-count">{thinkingTokensGenerated.toLocaleString()} tokens</span></div></div>
-      )}
-
-      {phase === 'subagents' && activeSubagents > 0 && (
-        <div className="subagent-banner">
-          <div className="subagent-dots">{Array.from({ length: activeSubagents }, (_, i) => <span key={i} className="subagent-dot" />)}</div>
-          <div className="subagent-detail">
-            <span>{(subagentWaves ?? [])[subagentWaveIdx]?.label}</span>
-            <span className="subagent-count">{activeSubagents} subagent{activeSubagents !== 1 ? 's' : ''} running</span>
-          </div>
-        </div>
-      )}
-
-      <div ref={contentRef} className="stream-content">
-        {displayedTokens.length === 0 && toolLog.length === 0 && phase === 'idle' && <div className="stream-empty">Waiting to start</div>}
-        {displayedTokens.length === 0 && toolLog.length === 0 && (phase === 'prefill' || phase === 'compacting') && <div className="stream-empty">Processing...</div>}
-        {displayedTokens.length === 0 && toolLog.length === 0 && phase === 'thinking' && <div className="stream-empty">Reasoning...</div>}
-        {toolLog.length > 0 && (
-          <div className="tool-log">
-            {toolLog.map((entry, i) => (
-              <div key={i} className={`tool-log-entry ${entry.parallel ? 'tool-log-parallel' : ''} ${entry.subagent ? 'tool-log-subagent' : ''}`}>
-                <span className="tool-log-icon">{entry.subagent ? '⊕' : entry.parallel ? '├' : '→'}</span>
-                <span className="tool-log-label">{entry.label}</span>
-                <span className="tool-log-tokens">+{entry.tokens.toLocaleString()} tok</span>
-              </div>
-            ))}
-            {phase !== 'complete' && displayedTokens.length === 0 && currentToolIdx >= toolLog.length && (
-              <div className="tool-log-entry tool-log-final"><span className="tool-log-icon">←</span><span className="tool-log-label">Generating response...</span></div>
-            )}
-          </div>
-        )}
-        {markdownHtml && <div className="md-content" dangerouslySetInnerHTML={{ __html: markdownHtml }} />}
-        {phase === 'streaming' && <span className="cursor" />}
+      <div className="meter-note">
+        <span>{plan.context.compactions ? `${plan.context.compactions} compaction${plan.context.compactions === 1 ? '' : 's'}` : 'No compaction'}</span>
+        <span>{formatTokens(Math.max(0, plan.context.max - plan.context.peak))} headroom</span>
       </div>
     </div>
   )
 }
 
-// ── Metrics Chart ──
-// Distinct colors for chart lines — avoids same-platform models blending together
-const CHART_COLORS = ['#f87171','#38bdf8','#34d399','#fbbf24','#a78bfa','#fb923c','#f472b6','#22d3ee','#a3e635','#e879f9']
-
-// Reasoning effort: affects thinkingBudget, not tok/s. Higher effort = more thinking tokens billed.
-const EFFORT_LEVELS = {
-  anthropic: [
-    { id: 'low', label: 'Low', thinkMul: 0, desc: 'No thinking' },
-    { id: 'medium', label: 'Medium', thinkMul: 0.3, desc: 'Light reasoning' },
-    { id: 'high', label: 'High', thinkMul: 1, desc: 'Standard (default)' },
-    { id: 'max', label: 'Max', thinkMul: 3.5, desc: 'Deep reasoning, 2-5x tokens' },
-  ],
-  openai: [
-    { id: 'none', label: 'None', thinkMul: 0, desc: 'No reasoning' },
-    { id: 'low', label: 'Low', thinkMul: 0.2, desc: 'Fast, minimal thinking' },
-    { id: 'medium', label: 'Medium', thinkMul: 0.5, desc: 'Balanced' },
-    { id: 'high', label: 'High', thinkMul: 1, desc: 'Standard (default)' },
-    { id: 'xhigh', label: 'XHigh', thinkMul: 3.5, desc: 'Max depth, 3-5x tokens' },
-  ],
+const MemorySummary = ({ model, plan }) => {
+  const hardware = HARDWARE[model.hardware]
+  if (!hardware?.memoryGB) return null
+  const kvGB = model.kvPerTokKB * plan.context.peak / 1024 / 1024
+  const total = model.weightGB + kvGB
+  const percent = Math.min(100, total / hardware.memoryGB * 100)
+  return (
+    <div className="memory-summary">
+      <div className="memory-ring" style={{ '--fill': `${percent * 3.6}deg` }}><span /></div>
+      <div>
+        <strong>{total.toFixed(1)} / {hardware.memoryGB} GB working set</strong>
+        <small>{model.weightGB.toFixed(1)} GB weights + {kvGB.toFixed(1)} GB peak KV</small>
+      </div>
+    </div>
+  )
 }
 
-// Subagent delegate models: main agent may route to cheaper/faster models
-// Subagent routing: default delegate + options per model
-const SUBAGENT_ROUTING = {
-  'cloud-opus46-1m': { default: 'cloud-sonnet46', options: ['cloud-sonnet46', 'cloud-haiku45'] },
-  'cloud-opus45': { default: 'cloud-sonnet46', options: ['cloud-sonnet46', 'cloud-haiku45'] },
-  'cloud-sonnet46': { default: 'cloud-haiku45', options: ['cloud-haiku45'] },
-  'cloud-gpt54': { default: 'cloud-gpt53-codex', options: ['cloud-gpt53-codex', 'cloud-gpt54-mini', 'cloud-gpt51-codex-mini'] },
-  'cloud-gpt54-pro': { default: 'cloud-gpt54', options: ['cloud-gpt54', 'cloud-gpt53-codex', 'cloud-gpt54-mini'] },
-  'cloud-gpt54-mini': { default: 'cloud-gpt51-codex-mini', options: ['cloud-gpt51-codex-mini', 'cloud-gpt54-nano'] },
-  'cloud-gemini31pro': { default: 'cloud-gemini3flash', options: ['cloud-gemini3flash', 'cloud-gemini25pro'] },
-  'cloud-gemini25pro': { default: 'cloud-gemini3flash', options: ['cloud-gemini3flash'] },
-  'cloud-o3mini': { default: 'cloud-gpt51-codex-mini', options: ['cloud-gpt51-codex-mini', 'cloud-gpt54-nano'] },
-  'cloud-gpt53-codex': { default: 'cloud-gpt51-codex-mini', options: ['cloud-gpt51-codex-mini'] },
+const PricingSummary = ({ model, snapshot, plan }) => {
+  if (!model.pricing) return null
+  const metrics = snapshot.metrics
+  const hasLongRate = plan.events.some((event) => event.detail?.rates?.longContextApplied)
+  return (
+    <div className="pricing-summary">
+      <div className="price-total">
+        <span>Observed spend</span>
+        <strong>{formatMoney(metrics.cost)}</strong>
+      </div>
+      <div className="price-breakdown">
+        <span>{formatTokens(metrics.uncachedInput)} fresh input</span>
+        <span>{formatTokens(metrics.cachedInput)} cache hits</span>
+        {metrics.cacheWriteInput > 0 && <span>{formatTokens(metrics.cacheWriteInput)} cache writes</span>}
+        <span>{formatTokens(metrics.output)} billed output</span>
+      </div>
+      <div className="rate-card">
+        ${model.pricing.input}/M input · ${model.pricing.cachedInput ?? model.pricing.input}/M cached · ${model.pricing.output}/M output
+        {hasLongRate && <b> · long-context rates active</b>}
+      </div>
+    </div>
+  )
 }
 
-const formatDuration = (s) => {
-  if (s < 60) return `${Math.round(s)}s`
-  const m = Math.floor(s / 60), sec = Math.round(s % 60)
-  if (m < 60) return sec > 0 ? `${m}m ${sec}s` : `${m}m`
-  const h = Math.floor(m / 60), min = m % 60
-  return min > 0 ? `${h}h ${min}m` : `${h}h`
+const ModelCard = ({
+  model,
+  baseModel,
+  plan,
+  elapsed,
+  running,
+  profileId,
+  onProfileChange,
+  outputTokens,
+  onRemove,
+}) => {
+  const localElapsed = Math.min(elapsed, plan.duration)
+  const snapshot = evaluatePlan(plan, localElapsed)
+  const visible = Math.floor(snapshot.metrics.visibleOutput)
+  const isReady = elapsed === 0 && !running
+  const status = isReady ? 'Ready' : snapshot.complete ? 'Complete' : snapshot.event?.label ?? 'Working'
+  const endToEndRate = localElapsed > 0 ? visible / localElapsed : 0
+  const decodeDuration = getEventDuration(plan, 'visible-decode')
+  const observedDecodeRate = decodeDuration > 0 ? plan.totals.visibleOutput / decodeDuration : 0
+  const recentTools = plan.events.filter((event) =>
+    ['tool-decode', 'tool-exec', 'subagents', 'compaction'].includes(event.kind) && event.start <= localElapsed,
+  ).slice(-4)
+  const longRate = plan.events.some((event) => event.detail?.rates?.longContextApplied)
+
+  return (
+    <article className={`model-card ${snapshot.complete && !isReady ? 'is-complete' : ''}`}>
+      <div className="card-topline" style={{ background: HARDWARE[model.hardware]?.color }} />
+      <header className="model-header">
+        <div>
+          <div className="model-name-row">
+            <span className="tier" style={{ background: TIER_COLORS[model.tier] }}>{model.tier}</span>
+            <h2>{model.name}</h2>
+          </div>
+          <div className="model-meta">
+            <span style={{ color: HARDWARE[model.hardware]?.color }}>{model.hardware}</span>
+            <a href={model.source} target="_blank" rel="noreferrer">source</a>
+          </div>
+        </div>
+        <span className={`status status-${snapshot.event?.kind ?? 'idle'}`}>{status}</span>
+        {onRemove && <button className="remove-model" onClick={onRemove} aria-label={`Remove ${model.name}`}>×</button>}
+      </header>
+
+      {baseModel.profiles?.length > 0 && (
+        <label className="profile-control">
+          <span>Decode profile</span>
+          <select name={`decode-profile-${baseModel.id}`} value={profileId ?? baseModel.profiles[0].id} onChange={(event) => onProfileChange(event.target.value)}>
+            {baseModel.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.label}</option>)}
+          </select>
+        </label>
+      )}
+
+      <div className="evidence-row">
+        <span>{model.quant ?? 'Hosted model'}</span>
+        <span className={`evidence evidence-${model.rateEvidence?.replaceAll(' ', '-')}`}>{model.rateEvidence}</span>
+        {longRate && <span className="long-rate-chip">long pricing</span>}
+      </div>
+
+      <div className="metric-grid">
+        <div><span>Configured decode</span><strong>{formatRate(model.decodeRate)}</strong></div>
+        <div><span>Observed decode</span><strong>{visible > 0 ? formatRate(observedDecodeRate) : 'Waiting'}</strong></div>
+        <div><span>End-to-end output</span><strong>{visible > 0 ? formatRate(endToEndRate) : 'Waiting'}</strong></div>
+        <div><span>Simulated time</span><strong>{formatDuration(localElapsed)} / {formatDuration(plan.duration)}</strong></div>
+      </div>
+
+      <ContextMeter plan={plan} />
+      <MemorySummary model={model} plan={plan} />
+      <PricingSummary model={model} snapshot={snapshot} plan={plan} />
+
+      <div className="output-progress-row">
+        <span>Visible output</span>
+        <strong>{visible.toLocaleString()} / {outputTokens.toLocaleString()}</strong>
+      </div>
+      <div className="output-progress"><span style={{ width: `${outputTokens ? visible / outputTokens * 100 : 100}%`, background: HARDWARE[model.hardware]?.color }} /></div>
+      <Timeline plan={plan} elapsed={localElapsed} />
+
+      <div className="activity-panel">
+        {recentTools.length > 0 && (
+          <div className="activity-log">
+            {recentTools.map((event, index) => (
+              <span key={`${event.start}-${index}`} className={event.start <= localElapsed && event.end >= localElapsed ? 'is-active' : ''}>
+                <i style={{ background: EVENT_COLORS[event.kind] }} />{event.label}
+              </span>
+            ))}
+          </div>
+        )}
+        <OutputPreview count={visible} complete={snapshot.complete} />
+      </div>
+
+      {model.note && <p className="model-note">{model.note}</p>}
+    </article>
+  )
 }
 
 const CHART_TABS = [
-  { id: 'cost', label: 'Cost', field: 'cost', fmt: (v) => `$${v < 1 ? v.toFixed(3) : v.toFixed(2)}`, zero: '$0' },
-  { id: 'input', label: 'Input tok', field: 'input', fmt: (v) => formatTokens(Math.round(v)), zero: '0' },
-  { id: 'output', label: 'Output tok', field: 'output', fmt: (v) => formatTokens(Math.round(v)), zero: '0' },
+  { id: 'cost', label: 'Spend', field: 'cost', format: formatMoney },
+  { id: 'input', label: 'Billed input', field: 'input', format: (value) => formatTokens(value) },
+  { id: 'output', label: 'Billed output', field: 'output', format: (value) => formatTokens(value) },
+  { id: 'visibleOutput', label: 'Visible output', field: 'visibleOutput', format: (value) => formatTokens(value) },
 ]
 
-const MetricsChart = ({ series, models, hasCloud }) => {
-  const [tab, setTab] = useState(hasCloud ? 'cost' : 'output')
-  const [hovered, setHovered] = useState(null)
-  const [mousePos, setMousePos] = useState(null)
+const MetricsChart = ({ plans, models, elapsed, running }) => {
+  const hasCost = models.some((model) => model.pricing)
+  const [tab, setTab] = useState(hasCost ? 'cost' : 'visibleOutput')
+  const [hoverTime, setHoverTime] = useState(null)
   const svgRef = useRef(null)
+  const effectiveTab = !hasCost && tab === 'cost' ? 'visibleOutput' : tab
+  const activeTab = CHART_TABS.find((candidate) => candidate.id === effectiveTab) ?? CHART_TABS[0]
+  const maxTime = Math.max(1, ...plans.map((plan) => plan.duration))
+  const samples = useMemo(() => plans.map((plan) => samplePlan(plan)), [plans])
 
-  if (!series || Object.keys(series).length === 0) return null
+  const maxValue = Math.max(1e-9, ...plans.map((plan) => plan.totals[activeTab.field] ?? 0))
+  const width = 860
+  const height = 240
+  const padding = { top: 18, right: 22, bottom: 32, left: 72 }
+  const plotWidth = width - padding.left - padding.right
+  const plotHeight = height - padding.top - padding.bottom
+  const x = (time) => padding.left + time / maxTime * plotWidth
+  const y = (value) => padding.top + plotHeight - value / maxValue * plotHeight
+  const currentTime = hoverTime ?? (running || elapsed > 0 ? Math.min(elapsed, maxTime) : null)
 
-  const ct = CHART_TABS.find(t => t.id === tab)
-  const W = 340, H = 150, PAD = { t: 10, r: 10, b: 24, l: 50 }
-  const plotW = W - PAD.l - PAD.r, plotH = H - PAD.t - PAD.b
-
-  let maxT = 0, maxV = 0
-  Object.values(series).forEach(pts => {
-    pts.forEach(p => { if (p.t > maxT) maxT = p.t; const v = p[ct.field] ?? 0; if (v > maxV) maxV = v })
-  })
-  if (maxT === 0 || maxV === 0) return null
-
-  const scaleX = (t) => PAD.l + (t / maxT) * plotW
-  const scaleY = (v) => PAD.t + plotH - (v / maxV) * plotH
-
-  const entries = Object.entries(series).filter(([, pts]) => pts.length >= 2)
+  const handlePointer = (event) => {
+    const bounds = svgRef.current?.getBoundingClientRect()
+    if (!bounds) return
+    const relative = (event.clientX - bounds.left) / bounds.width * width
+    setHoverTime(Math.max(0, Math.min(maxTime, (relative - padding.left) / plotWidth * maxTime)))
+  }
 
   return (
-    <div className="cost-chart">
-      <div className="chart-tabs">
-        {CHART_TABS.filter(t => hasCloud || t.id !== 'cost').map(t => (
-          <button key={t.id} className={`chart-tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>{t.label}</button>
-        ))}
+    <section className="metrics-panel">
+      <div className="metrics-heading">
+        <div>
+          <span className="eyebrow">Deterministic forecast</span>
+          <h2>Workload ledger</h2>
+        </div>
+        <div className="chart-tabs">
+          {CHART_TABS.filter((candidate) => hasCost || candidate.id !== 'cost').map((candidate) => (
+            <button key={candidate.id} className={candidate.id === effectiveTab ? 'active' : ''} onClick={() => setTab(candidate.id)}>{candidate.label}</button>
+          ))}
+        </div>
       </div>
-      <svg ref={svgRef} width={W} height={H} viewBox={`0 0 ${W} ${H}`}
-        onMouseMove={(e) => { const r = svgRef.current?.getBoundingClientRect(); if (r) setMousePos({ x: e.clientX - r.left, y: e.clientY - r.top }) }}
-        onMouseLeave={() => { setHovered(null); setMousePos(null) }}>
-        <text x={PAD.l - 4} y={PAD.t + 4} className="chart-label" textAnchor="end">{ct.fmt(maxV)}</text>
-        <text x={PAD.l - 4} y={PAD.t + plotH} className="chart-label" textAnchor="end">{ct.zero}</text>
-        <text x={PAD.l} y={H - 4} className="chart-label" textAnchor="start">0s</text>
-        <text x={W - PAD.r} y={H - 4} className="chart-label" textAnchor="end">{formatDuration(maxT)}</text>
-        <line x1={PAD.l} y1={PAD.t + plotH} x2={PAD.l + plotW} y2={PAD.t + plotH} stroke="var(--border)" strokeWidth="1" />
-        <line x1={PAD.l} y1={PAD.t} x2={PAD.l} y2={PAD.t + plotH} stroke="var(--border)" strokeWidth="1" />
-        {entries.map(([key, pts]) => {
-          const model = models[key]
-          const last = pts[pts.length - 1]
-          const extended = last.t < maxT ? [...pts, { ...last, t: maxT }] : pts
-          const d = extended.map((p, i) => `${i === 0 ? 'M' : 'L'}${scaleX(p.t).toFixed(1)},${scaleY(p[ct.field] ?? 0).toFixed(1)}`).join(' ')
-          const isHovered = hovered === key
-          return <g key={key}>
-            {/* Thick invisible hit area */}
-            <path d={d} fill="none" stroke="transparent" strokeWidth="12" onMouseEnter={() => setHovered(key)} onMouseLeave={() => setHovered(null)} style={{ cursor: 'pointer' }} />
-            <path d={d} fill="none" stroke={model?.chartColor ?? '#888'} strokeWidth={isHovered ? 2.5 : 1.5} opacity={hovered && !isHovered ? 0.25 : 0.9} />
+      <svg
+        ref={svgRef}
+        className="metrics-chart"
+        viewBox={`0 0 ${width} ${height}`}
+        onMouseMove={handlePointer}
+        onMouseLeave={() => setHoverTime(null)}
+      >
+        {[0, 0.25, 0.5, 0.75, 1].map((fraction) => (
+          <g key={fraction}>
+            <line x1={padding.left} x2={width - padding.right} y1={y(maxValue * fraction)} y2={y(maxValue * fraction)} className="grid-line" />
+            <text x={padding.left - 10} y={y(maxValue * fraction) + 3} textAnchor="end" className="axis-label">{activeTab.format(maxValue * fraction)}</text>
           </g>
+        ))}
+        {[0, 0.25, 0.5, 0.75, 1].map((fraction) => (
+          <text key={fraction} x={x(maxTime * fraction)} y={height - 8} textAnchor={fraction === 0 ? 'start' : fraction === 1 ? 'end' : 'middle'} className="axis-label">{formatDuration(maxTime * fraction)}</text>
+        ))}
+        {samples.map((points, index) => {
+          const model = models[index]
+          const color = CHART_COLORS[index % CHART_COLORS.length]
+          const path = points.map((point, pointIndex) => `${pointIndex ? 'L' : 'M'}${x(point.t).toFixed(2)},${y(point[activeTab.field] ?? 0).toFixed(2)}`).join(' ')
+          const final = points[points.length - 1]
+          return (
+            <g key={`${model.id}-${index}`}>
+              <path d={path} className="series-line" style={{ stroke: color }} />
+              {final.t < maxTime && <line x1={x(final.t)} x2={x(maxTime)} y1={y(final[activeTab.field] ?? 0)} y2={y(final[activeTab.field] ?? 0)} className="series-extension" style={{ stroke: color }} />}
+              <circle cx={x(final.t)} cy={y(final[activeTab.field] ?? 0)} r="3" fill={color} />
+            </g>
+          )
         })}
-        {/* Hover tooltip near cursor */}
-        {hovered && models[hovered] && mousePos && (() => {
-          const pts = series[hovered]
-          const last = pts[pts.length - 1]
-          const val = last[ct.field] ?? 0
-          const tx = Math.min(mousePos.x + 8, W - 120)
-          const ty = Math.max(mousePos.y - 8, 14)
-          return <g>
-            <rect x={tx - 4} y={ty - 12} width={120} height={16} rx={3} fill="var(--bg-card)" opacity="0.95" />
-            <text x={tx} y={ty} className="chart-tooltip" fill={models[hovered].chartColor}>{models[hovered].displayName}: {ct.fmt(val)}</text>
-          </g>
-        })()}
+        {currentTime != null && (
+          <line x1={x(currentTime)} x2={x(currentTime)} y1={padding.top} y2={padding.top + plotHeight} className="chart-cursor" />
+        )}
       </svg>
       <div className="chart-legend">
-        {entries.map(([key]) => {
-          const model = models[key]
-          if (!model) return null
-          return <span key={key} className={`chart-legend-item ${hovered === key ? 'chart-legend-active' : ''} ${hovered && hovered !== key ? 'chart-legend-dim' : ''}`} onMouseEnter={() => setHovered(key)} onMouseLeave={() => setHovered(null)}>
-            <span className="chart-legend-dot" style={{ background: model.chartColor }} />{model.displayName}
-          </span>
+        {models.map((model, index) => {
+          const atTime = evaluatePlan(plans[index], currentTime == null ? plans[index].duration : Math.min(currentTime, plans[index].duration))
+          return (
+            <div key={`${model.id}-${index}`}>
+              <span><i style={{ background: CHART_COLORS[index % CHART_COLORS.length] }} />{model.name}</span>
+              <strong>{activeTab.format(atTime.metrics[activeTab.field] ?? 0)}</strong>
+              <small>{formatDuration(plans[index].duration)} total</small>
+            </div>
+          )
         })}
       </div>
-    </div>
+      <p className="chart-note">Solid lines end when a model finishes. Dashed extensions show that cumulative usage stays flat while slower models continue.</p>
+    </section>
   )
 }
 
-// ── About Page ──
-function AboutPage() {
-  return (
-    <div className="about-page">
-      <h2>About this simulator</h2>
-      <p>This tool visualizes what actually happens when you use an AI coding agent — the full pipeline from prompt processing to tool execution to token generation. It uses real benchmark data from <a href="https://github.com/gisenberg/local-model-eval" target="_blank" rel="noopener noreferrer">local-model-eval</a>, a systematic evaluation of local LLM inference across consumer and workstation hardware.</p>
+const AboutPage = () => (
+  <section className="about-page">
+    <span className="eyebrow">Methodology</span>
+    <h1>What this simulator measures</h1>
+    <p>This is a deterministic agent-workload simulator, not a character animation with an independent cost counter. One event ledger drives the card output, token totals, latency, context growth, and spend chart.</p>
 
-      <h3>What it simulates</h3>
-      <p>Each card runs through the real lifecycle of an inference request:</p>
-      <ul>
-        <li><strong>Context compaction</strong> — When conversation history exceeds 80% of the model's context window, older turns are summarized to make room. This adds latency before anything else can happen.</li>
-        <li><strong>Prefill</strong> — The model processes all input tokens (system prompt, conversation history, file contents). This is bandwidth-bound and scales linearly with prompt size. Subsequent tool calls use incremental prefill — only new tokens need processing because the KV cache persists.</li>
-        <li><strong>Thinking</strong> — Models with extended reasoning generate hidden chain-of-thought tokens before producing visible output. These are generated at the decode rate and consume context window space.</li>
-        <li><strong>Tool calls</strong> — Coding agents don't generate one response. They read files, grep code, edit, run tests — each requiring a new prefill + decode cycle. The simulator models parallel tool grouping, incremental KV cache reuse, and context growth as tool results accumulate.</li>
-        <li><strong>Decode</strong> — Visible output token generation, streamed at the model's measured throughput.</li>
-      </ul>
+    <h2>Throughput has two meanings</h2>
+    <p><strong>Decode throughput</strong> measures generated tokens only while the model is decoding. It should converge exactly on the selected decode profile. <strong>End-to-end output throughput</strong> divides visible output by total wall time, including network latency, prefill, hidden reasoning, tool calls, tool execution, subagents, and compaction. It is intentionally lower.</p>
+    <p>Cloud decode and prefill rates use clearly labeled reference estimates, and hosted requests assume 120ms of network latency. Reasoning presets are deterministic hidden-token budgets rather than provider guarantees.</p>
 
-      <h3>Hardware platforms</h3>
-      <ul>
-        <li><strong>RTX 5090</strong> (32 GB GDDR7, 1,792 GB/s) — Consumer GPU with the highest bandwidth. Best for MoE models where only a fraction of parameters are active per token.</li>
-        <li><strong>MacBook Pro M4 Max</strong> (36 GB unified, 410 GB/s, ~30 GB Metal ceiling) — Portable inference. Lower bandwidth but unified memory avoids CPU-GPU transfers. TurboQuant KV is slower on Metal due to dequant compute overhead.</li>
-        <li><strong>DGX Spark GB10</strong> (128 GB unified, 273 GB/s) — Massive memory lets you run 100B+ parameter models. Bandwidth-limited, not capacity-limited.</li>
-        <li><strong>Cloud APIs</strong> (Anthropic, Google, OpenAI) — No local memory constraints. Performance data from <a href="https://artificialanalysis.ai" target="_blank" rel="noopener noreferrer">Artificial Analysis</a>.</li>
-      </ul>
+    <h2>Cost ledger</h2>
+    <p>Each main-model request includes an 18K-token coding-agent system and tool-schema baseline in addition to the selected prompt context. The context meter and billed input include both.</p>
+    <p>The first request is not treated as a cache hit. Later tool-loop requests can reuse only the exact prior request prefix. New assistant output and tool results are fresh input on the next request. Anthropic cache creation uses the published 1.25x write rate, cache hits use the published 0.1x rate, and provider-specific long-context prices are selected per request.</p>
+    <p>The cache toggle assumes that repeated prefixes remain warm and eligible for the provider's cached-input rate. It does not estimate eviction or explicit cache-storage fees.</p>
+    <p>Reasoning and tool-call tokens are output tokens even when they are not visible. Google explicitly includes thinking tokens in output pricing. The chart therefore distinguishes billed output from visible output.</p>
 
-      <h3>Where the data comes from</h3>
-      <p>Local model benchmarks use a standardized 3-task coding evaluation suite run at temperature 0 with zero code fixes — the model's output is extracted and tested as-is:</p>
-      <ul>
-        <li><strong>Expression Evaluator</strong> — Recursive descent parser with operator precedence (5 tests)</li>
-        <li><strong>A* Pathfinding</strong> — Graph algorithms with heap usage and edge cases (6 tests)</li>
-        <li><strong>LRU Cache with TTL</strong> — Doubly-linked list + hash map with time mocking (6 tests)</li>
-      </ul>
-      <p>VRAM measurements are captured from actual inference sessions. Throughput (tok/s) and TTFT are measured via streaming API calls. Prefill rates are derived from TTFT at known prompt sizes or from context-size deltas in long-context experiments.</p>
-      <p>KV cache costs per token are computed from model architecture (attention layer count, KV head count, head dimension) and verified against measured VRAM at multiple context sizes. Models using TurboQuant KV quantization show ~3.6-5.1x compression vs f16.</p>
+    <h2>Speculative decoding and MTP-2</h2>
+    <p>MTP uses a model's native multi-token prediction head to draft tokens that the target model verifies. The DGX Spark Qwen profile records 49 tok/s for vLLM with MTP-2, FlashInfer, and INT4+FP8, compared with 21 tok/s for the measured mainline llama.cpp configuration. The full 2.3x improvement is a stack result, not an MTP-only claim.</p>
 
-      <h3>Key findings</h3>
-      <ul>
-        <li><strong>Prefill dominates real-world latency</strong> — At 32K context on the Spark, prefill is 67% of total time. At 128K, it's 89%.</li>
-        <li><strong>Tool call loops compound the cost</strong> — A 6-step agent workflow means 6 prefill+decode cycles. Even with KV cache reuse, context grows with each step.</li>
-        <li><strong>MoE architectures win on throughput</strong> — Gemma 26B-A4B (4B active) runs at 139 tok/s vs Gemma 31B dense at 46 tok/s. Less bandwidth per token = faster decode.</li>
-        <li><strong>Architecture determines KV cost</strong> — Mamba hybrids (16 KB/tok) vs dense transformers (256 KB/tok) is a 16x difference in context memory cost.</li>
-        <li><strong>System prompts eat context</strong> — Coding agents consume ~12K tokens on system prompt + tool schemas before you type anything.</li>
-      </ul>
+    <h2>Sources and confidence</h2>
+    <p>Cloud model availability and prices link to current first-party provider documentation. Cloud decode rates are labeled as reference estimates because standard API throughput is not guaranteed. Local decode, prefill, memory, and quality data are labeled measured and link to the local-model-eval result set.</p>
+    <ul className="source-list">
+      <li><a href={SOURCES.openaiModels}>OpenAI model catalog and pricing</a></li>
+      <li><a href={SOURCES.anthropicFable}>Anthropic Fable 5</a>, <a href={SOURCES.anthropicSonnet5}>Sonnet 5</a>, and <a href={SOURCES.anthropicOpus48}>Opus 4.8</a></li>
+      <li><a href={SOURCES.googlePricing}>Google Gemini API pricing</a></li>
+      <li><a href={SOURCES.vllmMtp}>vLLM MTP documentation</a></li>
+      <li><a href={SOURCES.spark}>Measured DGX Spark results</a></li>
+    </ul>
+    <p className="as-of">Catalog and pricing reviewed July 20, 2026.</p>
+  </section>
+)
 
-      <p className="about-footer">Built with data from <a href="https://github.com/gisenberg/local-model-eval" target="_blank" rel="noopener noreferrer">gisenberg/local-model-eval</a>. Cloud model speeds from <a href="https://artificialanalysis.ai" target="_blank" rel="noopener noreferrer">Artificial Analysis</a>.</p>
-    </div>
-  )
-}
-
-// ── Hash Router ──
-const getHashRoute = () => {
-  const hash = window.location.hash.slice(1) // remove #
-  if (hash === 'about') return { page: 'about', experiment: null }
-  if (hash === 'custom') return { page: 'sim', experiment: 'custom' }
-  const exp = EXPERIMENTS.find(e => e.id === hash)
-  return { page: 'sim', experiment: exp ? hash : 'cloud-all' }
-}
-
-// ── App ──
-function App() {
-  const [route, setRoute] = useState(getHashRoute)
-  const [isRunning, setIsRunning] = useState(false)
-  const [isPaused, setIsPaused] = useState(false)
-  const [customModels, setCustomModels] = useState([])
-  const [modelPickerSlot, setModelPickerSlot] = useState(null) // null=closed, number=slot index, 'new'=adding
-  const [costSeries, setCostSeries] = useState({})
-  const costSeriesRef = useRef({})
-  const [isReset, setIsReset] = useState(false)
-  const [tokenCount, setTokenCount] = useState(4000)
-  const [promptTokens, setPromptTokens] = useState(25000)
-  const [toolPresetIdx, setToolPresetIdx] = useState(2)
-  const [subagentPresetIdx, setSubagentPresetIdx] = useState(0)
-  const [timeScale, setTimeScale] = useState(1)
-  const [loopEnabled, setLoopEnabled] = useState(false)
-  const [completedStreams, setCompletedStreams] = useState(new Set())
-
-  useEffect(() => {
-    const onHash = () => setRoute(getHashRoute())
-    window.addEventListener('hashchange', onHash)
-    return () => window.removeEventListener('hashchange', onHash)
-  }, [])
-
-  const navigate = (hash) => { window.location.hash = hash }
-
-  const activeExperiment = route.experiment || 'cloud-all'
-  const isCustom = activeExperiment === 'custom'
-  const experiment = isCustom
-    ? { id: 'custom', name: 'Custom Lineup', desc: 'Build your own comparison', columns: 3, models: customModels }
-    : EXPERIMENTS.find(e => e.id === activeExperiment)
-  const selectedModels = experiment.models.map(id => MODELS.find(m => m.id === id)).filter(Boolean)
-  const maxThinkingBudget = Math.max(...selectedModels.map(m => m.thinkingBudget))
-  const maxOutputMul = Math.max(...selectedModels.map(m => m.outputMul || 1))
-  const maxTotalTokens = Math.round(tokenCount * maxOutputMul) + maxThinkingBudget
-  const toolSteps = useMemo(() => flattenSteps(TOOL_PRESETS[toolPresetIdx].steps), [toolPresetIdx])
-  const subagentWaves = SUBAGENT_PRESETS[subagentPresetIdx].waves
-
-  const handleExperimentChange = (id) => {
-    setIsRunning(false); setIsReset(true); setCompletedStreams(new Set())
-    navigate(id)
-    setTimeout(() => setIsReset(false), 100)
-  }
-  const handleComplete = useCallback((index) => {
-    setCompletedStreams(prev => { const next = new Set(prev); next.add(index); return next })
-  }, [])
-  const handleCostTick = useCallback((idx, t, metrics) => {
-    const key = idx.toString()
-    if (!costSeriesRef.current[key]) costSeriesRef.current[key] = []
-    const pts = costSeriesRef.current[key]
-    if (pts.length === 0 || t - pts[pts.length - 1].t >= 0.2) {
-      // Ensure monotonic: never record a value lower than the previous point
-      const prev = pts[pts.length - 1]
-      const point = { t, ...metrics }
-      if (prev) {
-        if (point.cost < prev.cost) point.cost = prev.cost
-        if (point.input < prev.input) point.input = prev.input
-        if (point.output < prev.output) point.output = prev.output
-      }
-      pts.push(point)
-      setCostSeries({ ...costSeriesRef.current })
-    }
-  }, [])
-  const handleStart = () => {
-    if (isRunning && !isPaused) {
-      // Playing → Pause
-      setIsPaused(true)
-    } else if (isRunning && isPaused) {
-      // Paused → Resume
-      setIsPaused(false)
-    } else {
-      // Stopped → Start
-      setIsReset(false); setCompletedStreams(new Set()); setIsRunning(true); setIsPaused(false)
-      costSeriesRef.current = {}; setCostSeries({})
-    }
-  }
-  const handleReset = () => { setIsRunning(false); setIsPaused(false); setIsReset(true); setCompletedStreams(new Set()); setTimeout(() => setIsReset(false), 100) }
-
-  const tokens = useMemo(() => generateText(maxTotalTokens), [maxTotalTokens])
-  const allComplete = completedStreams.size >= experiment.models.length
-  const hasCloudModels = selectedModels.some(m => m.costIn != null)
-  const chartModelMap = useMemo(() => {
-    const map = {}
-    const nameCount = {}
-    selectedModels.forEach(m => { nameCount[m.name] = (nameCount[m.name] ?? 0) + 1 })
-    const nameIdx = {}
-    selectedModels.forEach((m, i) => {
-      nameIdx[m.name] = (nameIdx[m.name] ?? 0) + 1
-      const suffix = nameCount[m.name] > 1 ? ` #${nameIdx[m.name]}` : ''
-      map[i.toString()] = { ...m, chartColor: CHART_COLORS[i % CHART_COLORS.length], displayName: m.name + suffix }
-    })
-    return map
-  }, [selectedModels])
-  const controlsDisabled = isRunning && !allComplete
-
-
-
-
-  const cols = experiment.columns
-  const rows = []
-  for (let i = 0; i < selectedModels.length; i += cols) rows.push({ start: i, models: selectedModels.slice(i, i + cols) })
-
-  return (
-    <div className="app-layout">
-      <nav className="experiment-nav">
-        <div className="nav-title">Experiments</div>
-        <div className="nav-custom-wrap">
-          <button className={`nav-custom ${isCustom && route.page === 'sim' ? 'active' : ''}`} onClick={() => handleExperimentChange('custom')}>Build Your Own</button>
-        </div>
-        {EXPERIMENT_CATEGORIES.map(cat => (
-          <div key={cat.id} className="nav-category">
-            <div className="nav-cat-label">{cat.label}</div>
-            {EXPERIMENTS.filter(e => e.category === cat.id).map(exp => (
-              <button key={exp.id} className={`nav-item ${activeExperiment === exp.id && route.page === 'sim' ? 'active' : ''}`} onClick={() => handleExperimentChange(exp.id)}>
-                <span className="nav-item-name">{exp.name}</span>
-                <span className="nav-item-count">{exp.models.length}</span>
+const ModelPicker = ({ onChoose, onClose }) => (
+  <div className="modal-backdrop" onMouseDown={onClose}>
+    <div className="model-picker" onMouseDown={(event) => event.stopPropagation()}>
+      <header><div><span className="eyebrow">Custom comparison</span><h2>Add a model</h2></div><button onClick={onClose} aria-label="Close model picker">×</button></header>
+      <div className="picker-body">
+        {Object.keys(HARDWARE).map((hardware) => (
+          <section key={hardware}>
+            <h3>{hardware}</h3>
+            {MODELS.filter((model) => model.hardware === hardware).map((model) => (
+              <button key={model.id} onClick={() => onChoose(model.id)}>
+                <span className="tier" style={{ background: TIER_COLORS[model.tier] }}>{model.tier}</span>
+                <strong>{model.name}</strong>
+                <small>{model.decodeRate} tok/s</small>
               </button>
             ))}
-          </div>
+          </section>
         ))}
-        <div className="nav-footer">
-          <button className={`nav-about ${route.page === 'about' ? 'active' : ''}`} onClick={() => navigate('about')}>About this simulator</button>
-        </div>
-      </nav>
+      </div>
+    </div>
+  </div>
+)
 
-      <main className="app-main">
+function App() {
+  const [route, setRoute] = useState(getRoute)
+  const [customModels, setCustomModels] = useState([])
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [profileIds, setProfileIds] = useState({})
+  const [outputTokens, setOutputTokens] = useState(4_000)
+  const [promptTokens, setPromptTokens] = useState(25_000)
+  const [toolPresetIndex, setToolPresetIndex] = useState(2)
+  const [subagentPresetIndex, setSubagentPresetIndex] = useState(0)
+  const [effortId, setEffortId] = useState('high')
+  const [caching, setCaching] = useState(true)
+  const [timeScale, setTimeScale] = useState(10)
+  const [elapsed, setElapsed] = useState(0)
+  const [running, setRunning] = useState(false)
+  const [paused, setPaused] = useState(false)
+  const lastFrameRef = useRef(null)
+
+  useEffect(() => {
+    const handleHash = () => {
+      setRoute(getRoute())
+      setRunning(false)
+      setPaused(false)
+      setElapsed(0)
+      lastFrameRef.current = null
+    }
+    window.addEventListener('hashchange', handleHash)
+    return () => window.removeEventListener('hashchange', handleHash)
+  }, [])
+
+  const isCustom = route.experimentId === 'custom'
+  const experiment = isCustom
+    ? { id: 'custom', name: 'Custom Comparison', description: 'Build a focused model lineup', columns: 3, models: customModels }
+    : EXPERIMENTS.find((candidate) => candidate.id === route.experimentId) ?? EXPERIMENTS[0]
+  const baseModels = useMemo(() => experiment.models.map((id) => MODEL_BY_ID[id]).filter(Boolean), [experiment.models])
+  const resolvedModels = useMemo(() => baseModels.map((model, index) =>
+    resolveModelProfile(model, profileIds[`${model.id}:${index}`]),
+  ), [baseModels, profileIds])
+  const toolSteps = useMemo(() => flattenToolSteps(TOOL_PRESETS[toolPresetIndex].steps), [toolPresetIndex])
+  const effort = EFFORT_LEVELS.find((level) => level.id === effortId) ?? EFFORT_LEVELS[3]
+  const waves = SUBAGENT_PRESETS[subagentPresetIndex].waves
+
+  const plans = useMemo(() => resolvedModels.map((model) => {
+    const delegateId = DELEGATE_BY_HARDWARE[model.hardware]
+    const delegateBase = delegateId ? MODEL_BY_ID[delegateId] : null
+    const delegate = delegateBase ? resolveModelProfile(delegateBase) : null
+    return buildSimulationPlan({
+      model,
+      outputTokens,
+      promptTokens,
+      reasoningTokens: Math.round((model.reasoningTokens ?? 0) * effort.multiplier),
+      toolSteps,
+      subagentWaves: model.pricing ? waves : [],
+      delegate,
+      caching,
+    })
+  }), [resolvedModels, outputTokens, promptTokens, effort.multiplier, toolSteps, waves, caching])
+  const maxDuration = Math.max(0, ...plans.map((plan) => plan.duration))
+
+  const reset = useCallback(() => {
+    setRunning(false)
+    setPaused(false)
+    setElapsed(0)
+    lastFrameRef.current = null
+  }, [])
+
+  useEffect(() => {
+    if (!running || paused || maxDuration <= 0) return undefined
+    let frameId
+    const tick = (now) => {
+      if (lastFrameRef.current == null) lastFrameRef.current = now
+      const delta = Math.max(0, (now - lastFrameRef.current) / 1_000) * timeScale
+      lastFrameRef.current = now
+      setElapsed((current) => {
+        const next = Math.min(maxDuration, current + delta)
+        if (next >= maxDuration) setRunning(false)
+        return next
+      })
+      frameId = requestAnimationFrame(tick)
+    }
+    frameId = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frameId)
+  }, [running, paused, maxDuration, timeScale])
+
+  const navigate = (id) => {
+    window.location.hash = id
+  }
+
+  const toggleRun = () => {
+    if (maxDuration <= 0) return
+    if (running) {
+      setPaused((value) => !value)
+      lastFrameRef.current = null
+      return
+    }
+    if (elapsed >= maxDuration) setElapsed(0)
+    lastFrameRef.current = null
+    setPaused(false)
+    setRunning(true)
+  }
+
+  const updateProfile = (model, index, profileId) => {
+    reset()
+    setProfileIds((current) => ({ ...current, [`${model.id}:${index}`]: profileId }))
+  }
+
+  const changeControl = (setter, value) => {
+    reset()
+    setter(value)
+  }
+
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="brand"><span>TS</span><div><strong>Token Sim</strong><small>Agent economics lab</small></div></div>
+        <button className={`custom-link ${isCustom ? 'active' : ''}`} onClick={() => navigate('custom')}><span className="custom-link-full">+ Build comparison</span><span className="custom-link-compact">+ Compare</span></button>
+        {EXPERIMENT_CATEGORIES.map((category) => (
+          <section className="nav-section" key={category.id}>
+            <h2>{category.label}</h2>
+            {EXPERIMENTS.filter((candidate) => candidate.category === category.id).map((candidate) => (
+              <button key={candidate.id} className={route.experimentId === candidate.id ? 'active' : ''} onClick={() => navigate(candidate.id)}>
+                <span>{candidate.name}</span><small>{candidate.models.length}</small>
+              </button>
+            ))}
+          </section>
+        ))}
+        <button className={`about-link ${route.page === 'about' ? 'active' : ''}`} onClick={() => navigate('about')}>Methodology and sources</button>
+      </aside>
+
+      <main className="main-content">
         {route.page === 'about' ? <AboutPage /> : (
           <>
-            <header className="app-header">
-              <div className="header-top">
-                <h1>Token Speed Simulator</h1>
-                <a className="repo-link" href="https://github.com/gisenberg/local-model-eval" target="_blank" rel="noopener noreferrer">local-model-eval</a>
-              </div>
-              <p>{experiment.desc}</p>
+            <header className="page-header">
+              <div><span className="eyebrow">Agent workload simulator</span><h1>{experiment.name}</h1><p>{experiment.description}</p></div>
+              <div className="accuracy-badge"><i />One ledger · exact output</div>
             </header>
 
+            <section className="control-panel">
+              <label><span>Prompt context <b>{formatTokens(promptTokens)}</b></span><select name="starting-context" value={promptTokens} onChange={(event) => changeControl(setPromptTokens, Number(event.target.value))}>{PROMPT_PRESETS.map((preset) => <option key={preset.tokens} value={preset.tokens}>{preset.label} · {formatTokens(preset.tokens)}</option>)}</select><small>{PROMPT_PRESETS.find((preset) => preset.tokens === promptTokens)?.description} · 18K system added</small></label>
+              <label><span>Visible output <b>{formatTokens(outputTokens)}</b></span><select name="visible-output" value={outputTokens} onChange={(event) => changeControl(setOutputTokens, Number(event.target.value))}>{OUTPUT_PRESETS.map((preset) => <option key={preset.tokens} value={preset.tokens}>{preset.label} · {formatTokens(preset.tokens)}</option>)}</select><small>Exact across all assistant updates</small></label>
+              <label><span>Agent loop <b>{toolSteps.length + 1} requests</b></span><select name="agent-loop" value={toolPresetIndex} onChange={(event) => changeControl(setToolPresetIndex, Number(event.target.value))}>{TOOL_PRESETS.map((preset, index) => <option key={preset.label} value={index}>{preset.label}</option>)}</select><small>{TOOL_PRESETS[toolPresetIndex].description}</small></label>
+              <label><span>Reasoning effort <b>{effort.label}</b></span><select name="reasoning-effort" value={effortId} onChange={(event) => changeControl(setEffortId, event.target.value)}>{EFFORT_LEVELS.map((level) => <option key={level.id} value={level.id}>{level.label}</option>)}</select><small>Changes billed hidden output, not decode rate</small></label>
+              <label><span>Subagents <b>{waves.reduce((sum, wave) => sum + wave.count, 0) || 'none'}</b></span><select name="subagents" value={subagentPresetIndex} onChange={(event) => changeControl(setSubagentPresetIndex, Number(event.target.value))}>{SUBAGENT_PRESETS.map((preset, index) => <option key={preset.label} value={index}>{preset.label}</option>)}</select><small>{SUBAGENT_PRESETS[subagentPresetIndex].description}</small></label>
+              <label className="cache-control"><span>Prompt caching <b>{caching ? 'on' : 'off'}</b></span><button className={caching ? 'active' : ''} onClick={() => changeControl(setCaching, !caching)}><i />{caching ? 'Warm repeated prefixes' : 'All input billed fresh'}</button><small>First request is never a cache hit</small></label>
+            </section>
 
-            <div className="controls">
-              <div className="control-group">
-                <label>Output tokens<span>{tokenCount.toLocaleString()}</span></label>
-                <select value={tokenCount} onChange={(e) => setTokenCount(parseInt(e.target.value))} disabled={controlsDisabled} className="prompt-select">
-                  {OUTPUT_PRESETS.map(p => <option key={p.tokens} value={p.tokens}>{p.label} — {p.tokens.toLocaleString()}</option>)}
-                </select>
-                <div className="prompt-desc">{OUTPUT_PRESETS.find(p => p.tokens === tokenCount)?.desc}</div>
-              </div>
-              <div className="control-group">
-                <label>Prompt context<span>{promptTokens.toLocaleString()}</span></label>
-                <select value={promptTokens} onChange={(e) => setPromptTokens(parseInt(e.target.value))} disabled={controlsDisabled} className="prompt-select">
-                  {PROMPT_PRESETS.map(p => <option key={p.tokens} value={p.tokens}>{p.label} — {p.tokens.toLocaleString()}</option>)}
-                </select>
-                <div className="prompt-desc">{PROMPT_PRESETS.find(p => p.tokens === promptTokens)?.desc}</div>
-              </div>
-              <div className="control-group">
-                <label>Agent tool calls<span>{toolSteps.length}</span></label>
-                <select value={toolPresetIdx} onChange={(e) => setToolPresetIdx(parseInt(e.target.value))} disabled={controlsDisabled} className="prompt-select">
-                  {TOOL_PRESETS.map((p, i) => <option key={i} value={i}>{p.label}</option>)}
-                </select>
-                <div className="prompt-desc">{TOOL_PRESETS[toolPresetIdx].desc}</div>
-              </div>
-              <div className="control-group">
-                <label>Subagents<span>{subagentWaves.reduce((s, w) => s + w.count, 0) || 'none'}</span></label>
-                <select value={subagentPresetIdx} onChange={(e) => setSubagentPresetIdx(parseInt(e.target.value))} disabled={controlsDisabled} className="prompt-select">
-                  {SUBAGENT_PRESETS.map((p, i) => <option key={i} value={i}>{p.label}</option>)}
-                </select>
-                <div className="prompt-desc">{SUBAGENT_PRESETS[subagentPresetIdx].desc}</div>
-              </div>
-            </div>
+            <section className="transport-bar">
+              <button className="play-button" onClick={toggleRun} disabled={plans.length === 0}>{running && !paused ? 'Pause' : elapsed > 0 && elapsed < maxDuration ? 'Resume' : 'Run simulation'}</button>
+              <button className="reset-button" onClick={reset}>Reset</button>
+              <label className="speed-control"><span>Playback</span><select name="playback-speed" value={timeScale} onChange={(event) => setTimeScale(Number(event.target.value))}>{[1, 5, 10, 25, 50, 100].map((value) => <option key={value} value={value}>{value}x</option>)}</select></label>
+              <div className="master-progress"><span style={{ width: `${maxDuration ? Math.min(100, elapsed / maxDuration * 100) : 0}%` }} /></div>
+              <strong>{formatDuration(Math.min(elapsed, maxDuration))} / {formatDuration(maxDuration)}</strong>
+            </section>
 
-            <div className="action-bar">
-              <button onClick={handleStart} className="btn-start">{isRunning && !isPaused ? '⏸' : isRunning && isPaused ? '▶' : '▶'}</button>
-              <button onClick={handleReset} className="btn-reset">⏹</button>
-              <label className="loop-toggle">
-                <input type="checkbox" checked={loopEnabled} onChange={(e) => setLoopEnabled(e.target.checked)} />
-                Loop
-              </label>
-              <div className="time-scale">
-                <span className="time-scale-label">{timeScale}x</span>
-                <input type="range" min="0" max="6" step="1" value={[1,2,5,10,20,50,100].indexOf(timeScale)} onChange={(e) => setTimeScale([1,2,5,10,20,50,100][e.target.value])} className="time-scale-slider" />
-              </div>
-            </div>
+            {plans.length > 0 && <MetricsChart plans={plans} models={resolvedModels} elapsed={elapsed} running={running && !paused} />}
 
-            {isRunning && <MetricsChart series={costSeries} models={chartModelMap} hasCloud={hasCloudModels} />}
-
-            {isCustom ? (
-              <div className="sim-grid-flat" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
-                {selectedModels.map((model, i) => (
-                  <div key={model.id + '-' + i} className="custom-card-wrap">
-                    <button className="custom-card-remove" onClick={() => { setCustomModels(prev => prev.filter((_, j) => j !== i)); if (isRunning) handleReset() }}>×</button>
-                    <TokenStream
-                      model={model}
-                      tokens={tokens}
-                      isRunning={isRunning}
-                      isReset={isReset}
-                      isPaused={isPaused}
-                      tokenCount={tokenCount}
-                      promptTokens={promptTokens}
-                      toolSteps={toolSteps}
-                      subagentWaves={subagentWaves}
-                      timeScale={timeScale}
-                      loopEnabled={loopEnabled}
-                      onCostTick={handleCostTick}
-                      onComplete={handleComplete}
-                      streamIndex={i}
-                    />
-                  </div>
-                ))}
-                {!isRunning && (
-                  <button className="add-card-placeholder" onClick={() => setModelPickerSlot('new')}>
-                    <span className="add-card-icon">+</span>
-                    <span className="add-card-label">Add model</span>
-                  </button>
-                )}
-              </div>
-            ) : (
-              rows.map(({ start, models: rowModels }) => (
-                <div key={start} className="sim-row" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
-                  {rowModels.map((model, i) => (
-                    <TokenStream
-                      key={model.id + '-' + (start + i)}
-                      model={model}
-                      tokens={tokens}
-                      isRunning={isRunning}
-                      isReset={isReset}
-                      isPaused={isPaused}
-                      tokenCount={tokenCount}
-                      promptTokens={promptTokens}
-                      toolSteps={toolSteps}
-                      subagentWaves={subagentWaves}
-                      timeScale={timeScale}
-                      loopEnabled={loopEnabled}
-                      onCostTick={handleCostTick}
-                      onComplete={handleComplete}
-                      streamIndex={start + i}
-                    />
-                  ))}
-                </div>
-              ))
+            {isCustom && plans.length === 0 && (
+              <button className="empty-comparison" onClick={() => setPickerOpen(true)}><span>+</span><strong>Add your first model</strong><small>Compare cloud and local configurations in one ledger</small></button>
             )}
 
-            {modelPickerSlot != null && (
-              <div className="modal-overlay" onClick={() => setModelPickerSlot(null)}>
-                <div className="modal-content" onClick={e => e.stopPropagation()}>
-                  <div className="modal-header">
-                    <span>Select a model</span>
-                    <button className="modal-close" onClick={() => setModelPickerSlot(null)}>×</button>
-                  </div>
-                  <div className="modal-body">
-                    {['Anthropic API', 'Google API', 'OpenAI API', 'RTX 5090', 'M4 Max', 'DGX Spark'].map(hw => (
-                      <div key={hw} className="modal-group">
-                        <div className="modal-group-label">{hw}</div>
-                        {MODELS.filter(m => m.hardware === hw).map(m => (
-                          <button key={m.id} className="modal-model-btn" onClick={() => {
-                            if (modelPickerSlot === 'new') {
-                              setCustomModels(prev => [...prev, m.id])
-                            } else {
-                              setCustomModels(prev => { const n = [...prev]; n[modelPickerSlot] = m.id; return n })
-                            }
-                            setModelPickerSlot(null)
-                          }}>
-                            <span className="tier-badge" style={{ background: TIER_COLORS[m.tier] }}>{m.tier}</span>
-                            <span className="modal-model-name">{m.name}</span>
-                            <span className="modal-model-meta">{m.quant} — {m.tokPerSec} tok/s</span>
-                          </button>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
+            <section className="model-grid" style={{ '--columns': Math.min(experiment.columns, Math.max(1, resolvedModels.length)) }}>
+              {resolvedModels.map((model, index) => {
+                const baseModel = baseModels[index]
+                return (
+                  <ModelCard
+                    key={`${baseModel.id}-${index}`}
+                    model={model}
+                    baseModel={baseModel}
+                    plan={plans[index]}
+                    elapsed={elapsed}
+                    running={running && !paused}
+                    profileId={profileIds[`${baseModel.id}:${index}`]}
+                    onProfileChange={(profileId) => updateProfile(baseModel, index, profileId)}
+                    outputTokens={outputTokens}
+                    onRemove={isCustom ? () => { reset(); setCustomModels((current) => current.filter((_, modelIndex) => modelIndex !== index)) } : null}
+                  />
+                )
+              })}
+              {isCustom && <button className="add-model-card" onClick={() => setPickerOpen(true)}><span>+</span><strong>Add model</strong></button>}
+            </section>
           </>
         )}
       </main>
+      {pickerOpen && <ModelPicker onClose={() => setPickerOpen(false)} onChoose={(id) => { reset(); setCustomModels((current) => [...current, id]); setPickerOpen(false) }} />}
     </div>
   )
 }

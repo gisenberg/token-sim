@@ -1,12 +1,12 @@
 :root {
-  --bg: #0b0e14;
-  --bg-card: #131720;
-  --bg-inset: #0a0d12;
-  --border: #1e2530;
-  --border-light: #2a3140;
-  --text: #8899aa;
-  --text-bright: #c8d6e5;
-  --text-heading: #e8eef4;
+  --bg: #0c0a08;
+  --bg-card: #15130f;
+  --bg-inset: #100e0b;
+  --border: #2c281f;
+  --border-light: #453d2e;
+  --text: #aaa18d;
+  --text-bright: #e6ddc9;
+  --text-heading: #fff8e8;
   --mono: ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace;
   --sans: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', system-ui, sans-serif;
 
